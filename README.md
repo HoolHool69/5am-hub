@@ -6,11 +6,16 @@
 
 ## Installation
 
-Replace `OWNER` with the repository owner, then run the loader through a compatible client environment:
+Set the development key and execute the standalone bundle through a compatible client environment:
 
 ```lua
-loadstring(game:HttpGet("https://raw.githubusercontent.com/OWNER/5am-hub/main/loader/init.lua"))()
+_G.HubKey = "5AM-DEV"
+
+loadstring(game:HttpGet("https://raw.githack.com/HoolHool69/5am-hub/main/dist/loader.lua"))()
 ```
+
+The legacy `loader/init.lua` URL also redirects raw `loadstring` execution to
+the standalone bundle, but `dist/loader.lua` avoids the extra request.
 
 ## Features
 

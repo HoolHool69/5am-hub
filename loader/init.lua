@@ -8,6 +8,77 @@
     initializes matching modules, and exposes structured lifecycle results.
 ]]
 
+local STANDALONE_BUNDLE_URL = "https://raw.githack.com/HoolHool69/5am-hub/main/dist/loader.lua"
+
+local function HasModuleLoaderContext(): boolean
+    if typeof(script) ~= "Instance" then
+        return false
+    end
+
+    local parent = script.Parent
+    return script:FindFirstChild("utils") ~= nil
+        or (parent ~= nil and parent:FindFirstChild("utils") ~= nil)
+end
+
+local function BootstrapStandalone(): any
+    local environment: any = _G
+    local environmentSuccess, localEnvironment = pcall(function()
+        return getfenv(0)
+    end)
+    if environmentSuccess and type(localEnvironment) == "table" then
+        environment = localEnvironment
+    end
+    local baseEnvironment = environment
+
+    local getGlobalEnvironment = environment.getgenv
+    if type(getGlobalEnvironment) == "function" then
+        local globalSuccess, globalEnvironment = pcall(getGlobalEnvironment)
+        if globalSuccess and type(globalEnvironment) == "table" then
+            environment = setmetatable({}, {
+                __index = function(_table, key)
+                    local localValue = baseEnvironment[key]
+                    return if localValue ~= nil then localValue else globalEnvironment[key]
+                end,
+            })
+        end
+    end
+
+    local bundleUrl = if type(environment.FiveAMBundleUrl) == "string"
+            and environment.FiveAMBundleUrl ~= ""
+        then environment.FiveAMBundleUrl
+        else STANDALONE_BUNDLE_URL
+
+    local fetchSuccess, sourceOrError = pcall(function()
+        return game:HttpGet(bundleUrl)
+    end)
+    if not fetchSuccess or type(sourceOrError) ~= "string" then
+        error(string.format("5AM Hub could not download its standalone bundle: %s", tostring(sourceOrError)), 0)
+    end
+
+    local compiler = environment.loadstring or loadstring
+    if type(compiler) ~= "function" then
+        error("5AM Hub requires an executor with loadstring support", 0)
+    end
+
+    local compiledChunk, compileError = compiler(sourceOrError)
+    if type(compiledChunk) ~= "function" then
+        error(string.format("5AM Hub bundle compilation failed: %s", tostring(compileError)), 0)
+    end
+
+    local runSuccess, loaderOrError = pcall(compiledChunk)
+    if not runSuccess then
+        error(string.format("5AM Hub bundle startup failed: %s", tostring(loaderOrError)), 0)
+    end
+    return loaderOrError
+end
+
+-- A raw loadstring has no ModuleScript hierarchy. Redirect that execution path
+-- to the generated standalone artifact. The bundler defines the lexical marker
+-- below so its embedded copy of this module does not bootstrap recursively.
+if __FIVE_AM_BUNDLED ~= true and not HasModuleLoaderContext() then
+    return BootstrapStandalone()
+end
+
 local function FindLoaderModule(name: string): any
     return script:FindFirstChild(name) or script.Parent:FindFirstChild(name)
 end
@@ -33,6 +104,10 @@ local function Result(success: boolean, stage: string, code: string, message: st
 end
 
 local function ResolveProjectRoot(): any?
+    if typeof(script) ~= "Instance" then
+        return nil
+    end
+
     local candidates = {
         script.Parent,
         script.Parent.Parent,

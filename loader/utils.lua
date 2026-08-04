@@ -177,7 +177,11 @@ function Utils:GetProvidedKey(options: any?): string?
         return options.Key
     end
 
-    local environmentKey = self:GetEnvironment().FiveAMKey
+    local environment = self:GetEnvironment()
+    local environmentKey = environment.FiveAMKey or environment.HubKey
+    if (type(environmentKey) ~= "string" or environmentKey == "") and type(environment._G) == "table" then
+        environmentKey = environment._G.FiveAMKey or environment._G.HubKey
+    end
     if type(environmentKey) == "string" and environmentKey ~= "" then
         return environmentKey
     end

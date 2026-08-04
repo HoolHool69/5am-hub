@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
 /**
- * 5AM Hub loader bundler.
+ * 5AM Hub standalone bundler.
  *
- * Collects every direct `loader/*.lua` module, rewrites static sibling-module
- * requires to an internal lazy module registry, and emits `dist/loader.lua`.
- * Runtime requires performed by loader utilities are intentionally preserved.
+ * Bundles loader/*.lua plus the shared UI and universal game module into one
+ * executable Luau artifact. Static ModuleScript requires are rewritten to a
+ * lazy internal registry; runtime/external requires remain untouched.
  */
 
 "use strict";
@@ -15,10 +15,29 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const projectRoot = path.resolve(__dirname, "..");
-const loaderDirectory = path.join(projectRoot, "loader");
 const outputDirectory = path.join(projectRoot, "dist");
 const outputFile = path.join(outputDirectory, "loader.lua");
-const entryModule = "init";
+const entryModule = "loader/init";
+const uiModule = "ui/init";
+const universalModule = "games/_universal/init";
+
+const sourceGroups = [
+    {
+        directory: path.join(projectRoot, "loader"),
+        prefix: "loader",
+        recursive: false,
+    },
+    {
+        directory: path.join(projectRoot, "ui"),
+        prefix: "ui",
+        recursive: true,
+    },
+    {
+        directory: path.join(projectRoot, "games", "_universal"),
+        prefix: "games/_universal",
+        recursive: true,
+    },
+];
 
 function Fail(message) {
     throw new Error(`[5AM build] ${message}`);
@@ -28,107 +47,164 @@ function EscapeRegularExpression(value) {
     return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function ReadModules() {
-    if (!fs.existsSync(loaderDirectory)) {
-        Fail(`Loader directory does not exist: ${loaderDirectory}`);
+function NormalizePath(filePath) {
+    return filePath.split(path.sep).join("/");
+}
+
+function CollectLuaFiles(directory, recursive, relativeDirectory = "") {
+    if (!fs.existsSync(directory)) {
+        Fail(`Source directory does not exist: ${directory}`);
     }
 
-    const moduleFiles = fs.readdirSync(loaderDirectory, { withFileTypes: true })
-        .filter((entry) => entry.isFile() && entry.name.endsWith(".lua"))
+    const currentDirectory = path.join(directory, relativeDirectory);
+    const entries = fs.readdirSync(currentDirectory, { withFileTypes: true })
         .sort((left, right) => left.name.localeCompare(right.name));
+    const files = [];
 
-    if (moduleFiles.length === 0) {
-        Fail("No loader/*.lua modules were found");
-    }
-
-    const modules = new Map();
-    for (const moduleFile of moduleFiles) {
-        const moduleName = path.basename(moduleFile.name, ".lua");
-        const sourcePath = path.join(loaderDirectory, moduleFile.name);
-        const source = fs.readFileSync(sourcePath, "utf8")
-            .replace(/^\uFEFF/, "")
-            .replace(/\r\n/g, "\n");
-
-        if (modules.has(moduleName)) {
-            Fail(`Duplicate loader module name: ${moduleName}`);
+    for (const entry of entries) {
+        const relativePath = path.join(relativeDirectory, entry.name);
+        if (entry.isDirectory() && recursive) {
+            files.push(...CollectLuaFiles(directory, true, relativePath));
+        } else if (entry.isFile() && entry.name.endsWith(".lua")) {
+            files.push(relativePath);
         }
-
-        modules.set(moduleName, {
-            name: moduleName,
-            fileName: moduleFile.name,
-            source,
-        });
     }
 
-    if (!modules.has(entryModule)) {
-        Fail(`Entry module loader/${entryModule}.lua is missing`);
+    return files;
+}
+
+function ReadModules() {
+    const modules = new Map();
+
+    for (const group of sourceGroups) {
+        const luaFiles = CollectLuaFiles(group.directory, group.recursive);
+        for (const relativeFile of luaFiles) {
+            const relativeModuleName = NormalizePath(relativeFile).replace(/\.lua$/u, "");
+            const moduleName = `${group.prefix}/${relativeModuleName}`;
+            const sourcePath = path.join(group.directory, relativeFile);
+            const source = fs.readFileSync(sourcePath, "utf8")
+                .replace(/^\uFEFF/u, "")
+                .replace(/\r\n/gu, "\n");
+
+            if (modules.has(moduleName)) {
+                Fail(`Duplicate bundled module name: ${moduleName}`);
+            }
+
+            modules.set(moduleName, {
+                name: moduleName,
+                relativePath: NormalizePath(path.relative(projectRoot, sourcePath)),
+                source,
+            });
+        }
+    }
+
+    for (const requiredModule of [entryModule, uiModule, universalModule]) {
+        if (!modules.has(requiredModule)) {
+            Fail(`Required entry module is missing: ${requiredModule}.lua`);
+        }
     }
 
     return modules;
 }
 
+function ScriptNodeParts(moduleRecord) {
+    const parts = moduleRecord.name.split("/");
+    if (parts.at(-1) === "init") {
+        parts.pop();
+    }
+    return parts;
+}
+
+function ResolveScriptDependency(moduleRecord, segments) {
+    const resolvedParts = ScriptNodeParts(moduleRecord);
+
+    for (const segment of segments) {
+        if (segment === "Parent") {
+            if (resolvedParts.length === 0) {
+                Fail(`${moduleRecord.relativePath} references script.Parent above the bundle root`);
+            }
+            resolvedParts.pop();
+        } else {
+            resolvedParts.push(segment);
+        }
+    }
+
+    return resolvedParts.join("/");
+}
+
 function TransformModule(moduleRecord, availableModules) {
     const dependencies = new Set();
     const moduleVariables = new Map();
-    let source = moduleRecord.source.replace(/^--!strict\s*\n/, "");
+    let source = moduleRecord.source.replace(/^--!strict\s*\n/u, "");
 
     function RegisterDependency(dependencyName) {
         if (!availableModules.has(dependencyName)) {
-            Fail(`${moduleRecord.fileName} requires missing loader module ${dependencyName}.lua`);
+            Fail(`${moduleRecord.relativePath} requires missing bundled module ${dependencyName}.lua`);
         }
         dependencies.add(dependencyName);
         return `__bundle_require(${JSON.stringify(dependencyName)})`;
     }
 
-    // loader/init.lua resolves sibling ModuleScripts through FindLoaderModule
-    // before passing the resulting variable to require. Convert those locator
-    // declarations into stable bundle identifiers, then resolve their requires.
+    // loader/init.lua first resolves its siblings into variables. Preserve the
+    // declarations for readability while replacing their require calls below.
     source = source.replace(
-        /^[ \t]*local\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*assert\(FindLoaderModule\("([A-Za-z0-9_-]+)"\),\s*"[^"\n]*"\)\s*$/gm,
+        /^[ \t]*local\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*assert\(FindLoaderModule\("([A-Za-z0-9_-]+)"\),\s*"[^"\n]*"\)\s*$/gmu,
         (_match, variableName, dependencyName) => {
-            moduleVariables.set(variableName, dependencyName);
-            return `local ${variableName} = ${JSON.stringify(dependencyName)} -- bundled module reference`;
+            const resolvedName = `loader/${dependencyName}`;
+            moduleVariables.set(variableName, resolvedName);
+            return `local ${variableName} = ${JSON.stringify(resolvedName)} -- bundled module reference`;
         },
     );
-
     source = source.replace(
-        /^[ \t]*local\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*assert\(FindLoaderModule\('([A-Za-z0-9_-]+)'\),\s*'[^'\n]*'\)\s*$/gm,
+        /^[ \t]*local\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*assert\(FindLoaderModule\('([A-Za-z0-9_-]+)'\),\s*'[^'\n]*'\)\s*$/gmu,
         (_match, variableName, dependencyName) => {
-            moduleVariables.set(variableName, dependencyName);
-            return `local ${variableName} = ${JSON.stringify(dependencyName)} -- bundled module reference`;
+            const resolvedName = `loader/${dependencyName}`;
+            moduleVariables.set(variableName, resolvedName);
+            return `local ${variableName} = ${JSON.stringify(resolvedName)} -- bundled module reference`;
         },
     );
 
     for (const [variableName, dependencyName] of moduleVariables) {
         const requireVariablePattern = new RegExp(
             `\\brequire\\s*\\(\\s*${EscapeRegularExpression(variableName)}\\s*\\)`,
-            "g",
+            "gu",
         );
         source = source.replace(requireVariablePattern, () => RegisterDependency(dependencyName));
     }
 
-    // Resolve direct sibling patterns used by loader/keysystem.lua and
-    // loader/registry.lua. Parent depth is irrelevant because every loader file
-    // is bundled into the same internal namespace.
+    // Resolve script.Parent:WaitForChild("name") and FindFirstChild variants.
     source = source.replace(
-        /\brequire\s*\(\s*script(?:\.Parent)*:WaitForChild\(\s*["']([A-Za-z0-9_-]+)["']\s*\)\s*\)/g,
-        (_match, dependencyName) => RegisterDependency(dependencyName),
+        /\brequire\s*\(\s*script((?:\.Parent)*):WaitForChild\(\s*["']([A-Za-z0-9_-]+)["']\s*\)\s*\)/gu,
+        (_match, parentChain, childName) => {
+            const segments = [...parentChain.matchAll(/\.Parent/gu)].map(() => "Parent");
+            segments.push(childName);
+            return RegisterDependency(ResolveScriptDependency(moduleRecord, segments));
+        },
     );
     source = source.replace(
-        /\brequire\s*\(\s*script(?:\.Parent)*:FindFirstChild\(\s*["']([A-Za-z0-9_-]+)["']\s*\)\s*\)/g,
-        (_match, dependencyName) => RegisterDependency(dependencyName),
-    );
-    source = source.replace(
-        /\brequire\s*\(\s*script(?:\.Parent)*\.([A-Za-z_][A-Za-z0-9_]*)\s*\)/g,
-        (_match, dependencyName) => RegisterDependency(dependencyName),
+        /\brequire\s*\(\s*script((?:\.Parent)*):FindFirstChild\(\s*["']([A-Za-z0-9_-]+)["']\s*\)\s*\)/gu,
+        (_match, parentChain, childName) => {
+            const segments = [...parentChain.matchAll(/\.Parent/gu)].map(() => "Parent");
+            segments.push(childName);
+            return RegisterDependency(ResolveScriptDependency(moduleRecord, segments));
+        },
     );
 
-    // A call-form require that remains here is ambiguous and would make the
-    // supposedly standalone artifact depend on an unresolved loader ModuleScript.
+    // Resolve property chains such as script.core.Signal and
+    // script.components.Window from the UI entry module.
+    source = source.replace(
+        /\brequire\s*\(\s*script((?:\.[A-Za-z_][A-Za-z0-9_]*)+)\s*\)/gu,
+        (_match, propertyChain) => {
+            const segments = propertyChain.split(".").filter(Boolean);
+            return RegisterDependency(ResolveScriptDependency(moduleRecord, segments));
+        },
+    );
+
+    // An unresolved call-form require would still expect a ModuleScript tree and
+    // would make the generated artifact unsuitable for loadstring execution.
     // Function references such as pcall(require, moduleReference) remain valid.
-    const unresolvedRequire = source.match(/\brequire\s*\(/);
-    if (unresolvedRequire) {
-        Fail(`${moduleRecord.fileName} contains an unresolved require(...) expression`);
+    if (/\brequire\s*\(/u.test(source)) {
+        Fail(`${moduleRecord.relativePath} contains an unresolved require(...) expression`);
     }
 
     return {
@@ -156,11 +232,12 @@ function RenderBundle(modules) {
         "--!strict",
         "",
         "--[[",
-        "    5AM Hub bundled loader",
-        "    Generated by tools/build.js; edit loader/*.lua instead.",
+        "    5AM Hub standalone bundle",
+        "    Generated by tools/build.js; edit source modules instead.",
         `    Build ID: ${buildId}`,
         "]]",
         "",
+        "local __FIVE_AM_BUNDLED = true",
         "local __bundle_modules = {}",
         "local __bundle_cache = {}",
         "local __bundle_loaded = {}",
@@ -173,8 +250,7 @@ function RenderBundle(modules) {
         const dependencyLabel = moduleRecord.dependencies.length > 0
             ? moduleRecord.dependencies.join(", ")
             : "none";
-
-        chunks.push(`-- Module: loader/${moduleRecord.fileName} (dependencies: ${dependencyLabel})`);
+        chunks.push(`-- Module: ${moduleRecord.relativePath} (dependencies: ${dependencyLabel})`);
         chunks.push(`__bundle_modules[${JSON.stringify(moduleRecord.name)}] = function()`);
         chunks.push(moduleRecord.source);
         chunks.push("end");
@@ -210,7 +286,33 @@ function RenderBundle(modules) {
     chunks.push("    return valueOrError");
     chunks.push("end");
     chunks.push("");
-    chunks.push(`return __bundle_require(${JSON.stringify(entryModule)})`);
+    chunks.push(`local __loader = __bundle_require(${JSON.stringify(entryModule)})`);
+    chunks.push(`local __ui = __bundle_require(${JSON.stringify(uiModule)})`);
+    chunks.push(`local __universal = __bundle_require(${JSON.stringify(universalModule)})`);
+    chunks.push("local __registry = __loader.RegistryClass.new(nil)");
+    chunks.push("local __registered, __registrationError = __registry:RegisterUniversal(__universal)");
+    chunks.push("if not __registered then");
+    chunks.push("    error(string.format(\"5AM universal module registration failed: %s\", tostring(__registrationError)), 0)");
+    chunks.push("end");
+    chunks.push("__registry.Discover = false");
+    chunks.push("");
+    chunks.push("local __environment = __loader.Utils:GetEnvironment()");
+    chunks.push("local __providedKey = __environment.FiveAMKey or __environment.HubKey");
+    chunks.push("if (type(__providedKey) ~= \"string\" or __providedKey == \"\") and type(__environment._G) == \"table\" then");
+    chunks.push("    __providedKey = __environment._G.FiveAMKey or __environment._G.HubKey");
+    chunks.push("end");
+    chunks.push("");
+    chunks.push("local __startResult = __loader:Start({");
+    chunks.push("    Key = __providedKey,");
+    chunks.push("    UI = __ui,");
+    chunks.push("    Registry = __registry,");
+    chunks.push("})");
+    chunks.push("__loader.LastStartResult = __startResult");
+    chunks.push("if not __startResult.Success then");
+    chunks.push("    warn(string.format(\"5AM Hub startup failed [%s]: %s\", tostring(__startResult.Code), tostring(__startResult.Message)))");
+    chunks.push("end");
+    chunks.push("");
+    chunks.push("return __loader");
     chunks.push("");
 
     return {
@@ -238,8 +340,7 @@ function WriteBundle(bundle, checkOnly) {
     } else {
         console.log(`[5AM build] dist/loader.lua is already current (${bundle.buildId})`);
     }
-
-    console.log(`[5AM build] bundled modules: ${bundle.modules.map((record) => record.name).join(", ")}`);
+    console.log(`[5AM build] bundled ${bundle.modules.length} modules`);
 }
 
 function Main() {
