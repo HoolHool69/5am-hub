@@ -3,6 +3,17 @@
   "SchemaVersion": 1,
   "Description": "Maps Roblox place IDs to game packages. The _universal entry is always loaded as the fallback layer.",
   "Games": {
+    "113191263362278": {
+      "PlaceId": 113191263362278,
+      "Module": "113191263362278_garbage_king",
+      "Fallback": false,
+      "Meta": {
+        "Name": "Garbage King",
+        "DisplayName": "Garbage King",
+        "Version": "1.0.0",
+        "PlaceIds": [113191263362278]
+      }
+    },
     "_universal": {
       "Module": "_universal",
       "Fallback": true,

@@ -1,0 +1,291 @@
+-- Script Path: game:GetService("StarterGui").InventoryGui.InventoryLocalScript
+-- Took 0.03s to decompile.
+-- Executor: Volt (1.3.2.5)
+
+local LocalPlayer_upv_1 = game.Players.LocalPlayer
+local Parent_1 = script.Parent
+local InventoryFrame_upv_1 = Parent_1:WaitForChild("InventoryFrame")
+local OpenButton_1 = Parent_1:WaitForChild("OpenButton")
+local ItemList_upv_1 = InventoryFrame_upv_1:WaitForChild("ItemList")
+local EquipItem_upv_1 = game.ReplicatedStorage:FindFirstChild("EquipItem")
+local BackpackAmount_upv_1 = InventoryFrame_upv_1:FindFirstChild("BackpackAmount")
+local RaritySortButton_1 = InventoryFrame_upv_1:WaitForChild("RaritySortButton")
+local NewestSortButton_1 = InventoryFrame_upv_1:WaitForChild("NewestSortButton")
+local ValueSortButton_1 = InventoryFrame_upv_1:WaitForChild("ValueSortButton")
+InventoryFrame_upv_1.Visible = false
+local tbl_upv_1 = {}
+local u1 = "Default"
+local tbl_upv_2 = {}
+local tbl_upv_3 = {}
+tbl_upv_3.Common = Color3.fromRGB(170, 170, 170)
+tbl_upv_3.Uncommon = Color3.fromRGB(85, 255, 85)
+tbl_upv_3.Rare = Color3.fromRGB(85, 170, 255)
+tbl_upv_3.Epic = Color3.fromRGB(170, 0, 255)
+tbl_upv_3.Legendary = Color3.fromRGB(255, 140, 0)
+tbl_upv_3.Mythic = Color3.fromRGB(255, 0, 0)
+tbl_upv_3.Secret = Color3.fromRGB(255, 255, 255)
+OpenButton_1.MouseButton1Click:Connect(
+    function()
+        --[[
+          line: 51
+          upvalues:
+            InventoryFrame_upv_1 (copy, index: 1)
+        ]]
+        InventoryFrame_upv_1.Visible = not InventoryFrame_upv_1.Visible
+    end
+)
+local function getSortedItems_upv_1()
+    --[[
+      name: getSortedItems
+      line: 98
+      upvalues:
+        LocalPlayer_upv_1 (copy, index: 1)
+        u1 (ref,  index: 2)
+        tbl_upv_2 (copy, index: 3)
+    ]]
+    local tbl_4 = {}
+    local Rarity_1 = nil
+    local Created_1 = nil
+    local tbl_5 = nil
+    for _, value_1 in pairs(LocalPlayer_upv_1:WaitForChild("Inventory"):GetChildren()) do
+        Rarity_1 = value_1:FindFirstChild("Rarity")
+        Created_1 = value_1:FindFirstChild("Created")
+        tbl_5 = {}
+        tbl_5.Object = value_1
+        tbl_5.Rarity = (Rarity_1 and (Rarity_1.Value)) or "Common"
+        tbl_5.Created = (Created_1 and (Created_1.Value)) or 0
+        table.insert(tbl_4, tbl_5)
+    end
+    if u1 == "Rarity" then
+        table.sort(
+            tbl_4,
+            function(a1, a2)
+                --[[
+                  line: 132
+                  upvalues:
+                    tbl_upv_2 (copy, index: 1)
+                ]]
+                return tbl_upv_2[a2.Rarity] < tbl_upv_2[a1.Rarity]
+            end
+        )
+    elseif u1 == "Newest" then
+        table.sort(
+            tbl_4,
+            function(a3, a4)
+                --[[
+                  line: 143
+                ]]
+                return a4.Created < a3.Created
+            end
+        )
+    elseif u1 == "Value" then
+        table.sort(
+            tbl_4,
+            function(a5, a6)
+                --[[
+                  line: 154
+                ]]
+                local Value_1 = a5.Object:FindFirstChild("Value")
+                local Value_2 = a6.Object:FindFirstChild("Value")
+                local v1 = (Value_1 and (Value_1.Value)) or 0
+                return ((Value_2 and (Value_2.Value)) or 0) < v1
+            end
+        )
+    end
+    return tbl_4
+end
+local function clearItems_upv_1()
+    --[[
+      name: clearItems
+      line: 178
+      upvalues:
+        tbl_upv_1 (ref, index: 1)
+    ]]
+    for _, value_2 in pairs(tbl_upv_1) do
+        value_2:Destroy()
+    end
+    tbl_upv_1 = {}
+end
+local function createItemBox_upv_1(a1)
+    --[[
+      name: createItemBox
+      line: 197
+      upvalues:
+        ItemList_upv_1 (copy, index: 1)
+        tbl_upv_1 (ref,  index: 2)
+        tbl_upv_3 (copy, index: 3)
+        EquipItem_upv_1 (copy, index: 4)
+    ]]
+    local Object_1 = a1.Object
+    local Amount_1 = Object_1:FindFirstChild("Amount")
+    local Value_3 = Object_1:FindFirstChild("Value")
+    if not Amount_1 then
+        return
+    end
+    if Value_3 then
+        local _ = Object_1:FindFirstChild("Locked")
+        local Locked_1 = Object_1:FindFirstChild("Locked")
+        local Name_upv_1 = Object_1.Name
+        local v2 = Instance.new("TextButton")
+        v2.Name = Name_upv_1
+        v2.Size = UDim2.new(0, 120, 0, 80)
+        v2.TextScaled = true
+        v2.Active = true
+        v2.Parent = ItemList_upv_1
+        tbl_upv_1[Name_upv_1] = v2
+        v2.Text = Name_upv_1 .. "\n" .. a1.Rarity .. "\nAmount: " .. Amount_1.Value .. "\n$" .. Amount_1.Value * Value_3.Value
+        if tbl_upv_3[a1.Rarity] then
+            v2.BackgroundColor3 = tbl_upv_3[a1.Rarity]
+        end
+        local u2 = Instance.new("TextLabel")
+        u2.Name = "LockIcon"
+        u2.Size = UDim2.new(0, 30, 0, 30)
+        u2.Position = UDim2.new(1, -35, 1, -35)
+        u2.BackgroundTransparency = 1
+        u2.Text = "\240\159\148\146"
+        u2.TextScaled = true
+        u2.ZIndex = 5
+        u2.Parent = v2
+        u2.Visible = Locked_1.Value
+        local LockItem_upv_1 = game.ReplicatedStorage:WaitForChild("LockItem")
+        v2.InputBegan:Connect(
+            function(a2)
+                --[[
+                  line: 295
+                  upvalues:
+                    LockItem_upv_1 (copy, index: 1)
+                    Name_upv_1 (copy, index: 2)
+                    u2 (copy, index: 3)
+                ]]
+                if a2.UserInputType ~= Enum.UserInputType.MouseButton2 then
+                    return
+                end
+                LockItem_upv_1:FireServer(Name_upv_1)
+                u2.Visible = not u2.Visible
+            end
+        )
+        v2.MouseButton1Click:Connect(
+            function()
+                --[[
+                  line: 312
+                  upvalues:
+                    EquipItem_upv_1 (copy, index: 1)
+                    Name_upv_1 (copy, index: 2)
+                ]]
+                if not EquipItem_upv_1 then
+                    return
+                end
+                EquipItem_upv_1:FireServer(Name_upv_1)
+            end
+        )
+    end
+end
+local function updateBackpack_upv_1()
+    --[[
+      name: updateBackpack
+      line: 61
+      upvalues:
+        LocalPlayer_upv_1 (copy, index: 1)
+        BackpackAmount_upv_1 (copy, index: 2)
+    ]]
+    local Inventory_1 = LocalPlayer_upv_1:FindFirstChild("Inventory")
+    local MaxBackpack_1 = LocalPlayer_upv_1:FindFirstChild("MaxBackpack")
+    if not Inventory_1 then
+        return
+    end
+    if MaxBackpack_1 then
+        local v3 = 0
+        local Amount_2 = nil
+        for _, value_3 in pairs(Inventory_1:GetChildren()) do
+            Amount_2 = value_3:FindFirstChild("Amount")
+            v3 = (Amount_2 and (v3 + Amount_2.Value)) or v3
+        end
+        if BackpackAmount_upv_1 then
+            BackpackAmount_upv_1.Text = "Backpack: " .. v3 .. "/" .. MaxBackpack_1.Value
+        end
+    end
+end
+function refreshInventory()
+    --[[
+      name: refreshInventory
+      line: 334
+      upvalues:
+        clearItems_upv_1 (copy, index: 1)
+        getSortedItems_upv_1 (copy, index: 2)
+        createItemBox_upv_1 (copy, index: 3)
+        updateBackpack_upv_1 (copy, index: 4)
+    ]]
+    clearItems_upv_1()
+    for _, value_4 in pairs(getSortedItems_upv_1()) do
+        createItemBox_upv_1(value_4)
+    end
+    updateBackpack_upv_1()
+end
+RaritySortButton_1.MouseButton1Click:Connect(
+    function()
+        --[[
+          line: 361
+          upvalues:
+            u1 (ref, index: 1)
+        ]]
+        u1 = "Rarity"
+        refreshInventory()
+    end
+)
+NewestSortButton_1.MouseButton1Click:Connect(
+    function()
+        --[[
+          line: 371
+          upvalues:
+            u1 (ref, index: 1)
+        ]]
+        u1 = "Newest"
+        refreshInventory()
+    end
+)
+ValueSortButton_1.MouseButton1Click:Connect(
+    function()
+        --[[
+          line: 381
+          upvalues:
+            u1 (ref, index: 1)
+        ]]
+        u1 = "Value"
+        refreshInventory()
+    end
+)
+local v4 = LocalPlayer_upv_1:WaitForChild("Inventory", 10)
+if v4 then
+    v4.ChildAdded:Connect(
+        function()
+            --[[
+              line: 400
+            ]]
+            task.wait(0.1)
+            refreshInventory()
+        end
+    )
+    v4.ChildRemoved:Connect(
+        function()
+            --[[
+              line: 410
+            ]]
+            refreshInventory()
+        end
+    )
+    refreshInventory()
+end
+local v5 = LocalPlayer_upv_1:WaitForChild("MaxBackpack", 10)
+if not v5 then
+    return
+end
+v5.Changed:Connect(
+    function()
+        --[[
+          line: 433
+          upvalues:
+            updateBackpack_upv_1 (copy, index: 1)
+        ]]
+        updateBackpack_upv_1()
+    end
+)

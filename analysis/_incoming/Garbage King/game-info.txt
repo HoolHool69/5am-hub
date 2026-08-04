@@ -1,0 +1,12 @@
+Game: Ugc
+PlaceId: 113191263362278
+JobId: 20d44e09-e719-46fd-a266-57ff2eb28212
+
+Summary:
+The player walks around the map and searches trash cans for items. Trash cans use ProximityPrompts, so the player presses or holds E to search them rather than receiving an item instantly. Each search rewards a random item. The collected items can then be sold for currency. The main gameplay loop is searching trash cans, collecting randomized items, and selling those items.
+
+Detected client-visible information:
+- Workspace instances: 4521
+- Replicated network remotes: 41
+- ProximityPrompts: 22
+- Trash/search-related ProximityPrompts: 20

@@ -1,0 +1,76 @@
+-- Script Path: game:GetService("StarterGui").SellGui.LocalScript
+-- Took 0.01s to decompile.
+-- Executor: Volt (1.3.2.5)
+
+local ReplicatedStorage_1 = game:GetService("ReplicatedStorage")
+local Parent_1 = script.Parent
+print("\240\159\146\187 [CLIENT] Sell script loaded completely.")
+local u1 = Parent_1:FindFirstChild("SellFrame") or (Parent_1:FindFirstChildWhichIsA("Frame"))
+if u1 then
+    local OpenSellMenu_1 = ReplicatedStorage_1:WaitForChild("OpenSellMenu")
+    local SellRequest_upv_1 = ReplicatedStorage_1:WaitForChild("SellRequest")
+    u1.Visible = false
+    OpenSellMenu_1.OnClientEvent:Connect(
+        function()
+            --[[
+              line: 21
+              upvalues:
+                u1 (copy, index: 1)
+            ]]
+            print("\240\159\148\147 [CLIENT] Event caught from server pad! Opening UI.")
+            u1.Visible = true
+        end
+    )
+    if u1:FindFirstChild("SellAllButton") then
+        u1.SellAllButton.MouseButton1Click:Connect(
+            function()
+                --[[
+                  line: 28
+                  upvalues:
+                    SellRequest_upv_1 (copy, index: 1)
+                    u1 (copy, index: 2)
+                ]]
+                print("\240\159\147\164 [CLIENT] Firing Request: Sell All Items")
+                SellRequest_upv_1:FireServer("All")
+                u1.Visible = false
+            end
+        )
+    else
+        warn("\226\154\160\239\184\143 [CLIENT] Missing 'SellAllButton' inside your frame layout.")
+    end
+    if u1:FindFirstChild("SellHeldButton") then
+        u1.SellHeldButton.MouseButton1Click:Connect(
+            function()
+                --[[
+                  line: 39
+                  upvalues:
+                    SellRequest_upv_1 (copy, index: 1)
+                    u1 (copy, index: 2)
+                ]]
+                print("\240\159\147\164 [CLIENT] Firing Request: Sell Held Item")
+                SellRequest_upv_1:FireServer("Held")
+                u1.Visible = false
+            end
+        )
+    else
+        warn("\226\154\160\239\184\143 [CLIENT] Missing 'SellHeldButton' inside your frame layout.")
+    end
+    local v1 = u1:FindFirstChild("CancelButton") or (u1:FindFirstChild("CloseButton"))
+    if v1 then
+        v1.MouseButton1Click:Connect(
+            function()
+                --[[
+                  line: 51
+                  upvalues:
+                    u1 (copy, index: 1)
+                ]]
+                print("\240\159\148\146 [CLIENT] Closing menu.")
+                u1.Visible = false
+            end
+        )
+    else
+        warn("\226\154\160\239\184\143 [CLIENT] Missing 'CancelButton' or 'CloseButton' inside your frame layout.")
+    end
+else
+    warn("\226\154\160\239\184\143 [CLIENT] Error: Could not find your frame asset inside SellGui! Check your name.")
+end
