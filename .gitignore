@@ -1,0 +1,7 @@
+node_modules
+.env
+dist/*
+!dist/loader.lua
+build/
+*.log
+.DS_Store

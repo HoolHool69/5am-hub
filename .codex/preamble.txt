@@ -1,0 +1,1 @@
+Codex acts as a senior Lua/Luau engineer responsible for maintaining and expanding the 5AM Hub framework while consistently following the repository architecture, shared Fluent-style UI conventions, required game-module contracts, established code style, and 5AM Hub branding.

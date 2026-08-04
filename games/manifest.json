@@ -1,0 +1,17 @@
+{
+  "$schema": "5AMHub.GameManifest.v1",
+  "SchemaVersion": 1,
+  "Description": "Maps Roblox place IDs to game packages. The _universal entry is always loaded as the fallback layer.",
+  "Games": {
+    "_universal": {
+      "Module": "_universal",
+      "Fallback": true,
+      "Meta": {
+        "Name": "Universal",
+        "DisplayName": "Universal",
+        "Version": "1.0.0",
+        "PlaceIds": ["*"]
+      }
+    }
+  }
+}
