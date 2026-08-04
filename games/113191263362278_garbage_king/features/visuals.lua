@@ -247,6 +247,7 @@ function Visuals.Init(context: any)
             connection:Disconnect()
         end
         table.clear(connections)
+        tab:Destroy()
     end
 end
 

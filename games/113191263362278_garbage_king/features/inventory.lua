@@ -278,6 +278,7 @@ function Inventory.Init(context: any)
             playerConnection = nil
         end
         table.clear(pendingLocks)
+        tab:Destroy()
     end
 end
 

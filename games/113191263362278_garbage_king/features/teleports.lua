@@ -252,6 +252,7 @@ function Teleports.Init(context: any)
         table.clear(connections)
         table.clear(locations)
         table.clear(locationNames)
+        tab:Destroy()
     end
 end
 

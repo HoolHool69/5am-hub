@@ -19,6 +19,7 @@ local Workspace = game:GetService("Workspace")
 local ACCENT = Color3.fromRGB(139, 92, 246)
 local activeCleanup: (() -> ())? = nil
 local activeWindow: any? = nil
+local activeLoader: any? = nil
 
 local module = {
     Meta = {
@@ -48,15 +49,43 @@ local function Clamp(value: number, minimum: number, maximum: number): number
     return math.max(minimum, math.min(maximum, value))
 end
 
+local function RemoveStaleRootGuis(UI: any, Loader: any)
+    if not Loader or not Loader.Utils or type(Loader.Utils.ResolveGuiParents) ~= "function" then
+        return
+    end
+
+    local ok, parents = pcall(Loader.Utils.ResolveGuiParents, Loader.Utils)
+    if not ok or type(parents) ~= "table" then
+        return
+    end
+
+    local currentRoot = UI.RootGui
+    local seen: {[Instance]: boolean} = {}
+    for _, parent in parents do
+        if typeof(parent) == "Instance" and not seen[parent] then
+            seen[parent] = true
+            for _, child in parent:GetChildren() do
+                if child ~= currentRoot and child:IsA("ScreenGui") and child.Name == "FiveAMHub" then
+                    pcall(child.Destroy, child)
+                end
+            end
+        end
+    end
+end
+
 function module.Init(UI: any, Loader: any)
     if activeCleanup then
         activeCleanup()
         activeCleanup = nil
     end
+    if activeLoader and activeLoader.ActiveWindow == activeWindow then
+        activeLoader.ActiveWindow = nil
+    end
     if activeWindow and activeWindow.Destroy then
         activeWindow:Destroy()
         activeWindow = nil
     end
+    activeLoader = nil
 
     local localPlayer = Players.LocalPlayer
     if not localPlayer then
@@ -68,6 +97,7 @@ function module.Init(UI: any, Loader: any)
         return nil
     end
 
+    RemoveStaleRootGuis(UI, Loader)
     local window = UI:CreateWindow({
         Title = "5AM Hub",
         SubTitle = "Universal",
@@ -937,8 +967,16 @@ function module.Init(UI: any, Loader: any)
 
     activeCleanup = Cleanup
     activeWindow = window
+    activeLoader = Loader
+    if Loader then
+        Loader.ActiveWindow = window
+    end
     Track(window.Instance.Destroying:Connect(function()
         Cleanup()
+        if activeLoader and activeLoader.ActiveWindow == window then
+            activeLoader.ActiveWindow = nil
+        end
+        activeLoader = nil
         if activeCleanup == Cleanup then
             activeCleanup = nil
         end
@@ -955,6 +993,10 @@ function module.Destroy()
         activeCleanup()
         activeCleanup = nil
     end
+    if activeLoader and activeLoader.ActiveWindow == activeWindow then
+        activeLoader.ActiveWindow = nil
+    end
+    activeLoader = nil
     if activeWindow and activeWindow.Destroy then
         activeWindow:Destroy()
         activeWindow = nil

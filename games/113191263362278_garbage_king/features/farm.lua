@@ -375,6 +375,7 @@ function Farm.Init(context: any)
             promptConnection = nil
         end
         RestorePrompts()
+        tab:Destroy()
     end
 end
 

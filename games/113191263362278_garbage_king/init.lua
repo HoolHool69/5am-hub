@@ -12,6 +12,8 @@ local featureModules = {
 
 local activeCleanup: (() -> ())? = nil
 local activeWindow: any? = nil
+local activeOwnsWindow = false
+local activeLoader: any? = nil
 
 local module = {
     Meta = {
@@ -29,10 +31,12 @@ function module.Init(UI: any, Loader: any)
         activeCleanup()
         activeCleanup = nil
     end
-    if activeWindow and activeWindow.Destroy then
+    if activeOwnsWindow and activeWindow and activeWindow.Destroy then
         activeWindow:Destroy()
-        activeWindow = nil
     end
+    activeWindow = nil
+    activeOwnsWindow = false
+    activeLoader = nil
 
     local localPlayer = Players.LocalPlayer
     if not localPlayer then
@@ -44,10 +48,23 @@ function module.Init(UI: any, Loader: any)
         return nil
     end
 
-    local window = UI:CreateWindow({
-        Title = "5AM Hub",
-        SubTitle = "Garbage King",
-    })
+    local sharedWindow = if Loader then Loader.ActiveWindow else nil
+    local hasSharedWindow = sharedWindow
+        and sharedWindow.Instance
+        and sharedWindow.Instance.Parent ~= nil
+    local window = if hasSharedWindow
+        then sharedWindow
+        else UI:CreateWindow({
+            Title = "5AM Hub",
+            SubTitle = "Garbage King",
+        })
+    local ownsWindow = not hasSharedWindow
+    if window.SetSubTitle then
+        window:SetSubTitle("Garbage King")
+    end
+    if Loader then
+        Loader.ActiveWindow = window
+    end
     local cleanupTasks: {() -> ()} = {}
     local remotes = Remotes.new()
     local environment = if Loader and Loader.Utils and Loader.Utils.GetEnvironment
@@ -115,6 +132,8 @@ function module.Init(UI: any, Loader: any)
 
     activeCleanup = Cleanup
     activeWindow = window
+    activeOwnsWindow = ownsWindow
+    activeLoader = Loader
 
     if window.Instance and window.Instance.Destroying then
         local destroyingConnection: RBXScriptConnection?
@@ -130,6 +149,11 @@ function module.Init(UI: any, Loader: any)
             if activeWindow == window then
                 activeWindow = nil
             end
+            activeOwnsWindow = false
+            if activeLoader and activeLoader.ActiveWindow == window then
+                activeLoader.ActiveWindow = nil
+            end
+            activeLoader = nil
         end)
     end
 
@@ -141,10 +165,17 @@ function module.Destroy()
         activeCleanup()
         activeCleanup = nil
     end
-    if activeWindow and activeWindow.Destroy then
-        activeWindow:Destroy()
-        activeWindow = nil
+    if activeLoader and activeLoader.ActiveWindow == activeWindow and activeOwnsWindow then
+        activeLoader.ActiveWindow = nil
     end
+    activeLoader = nil
+    if activeOwnsWindow and activeWindow and activeWindow.Destroy then
+        activeWindow:Destroy()
+    elseif activeWindow and activeWindow.SetSubTitle then
+        activeWindow:SetSubTitle("Universal")
+    end
+    activeWindow = nil
+    activeOwnsWindow = false
 end
 
 return module
