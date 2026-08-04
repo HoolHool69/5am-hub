@@ -297,6 +297,7 @@ function RenderBundle(modules) {
     chunks.push("    local moduleEnvironment = setmetatable({");
     chunks.push("        __FIVE_AM_BUNDLED = __FIVE_AM_BUNDLED,");
     chunks.push("        __bundle_require = __bundle_require,");
+    chunks.push("        script = false,");
     chunks.push("    }, {");
     chunks.push("        __index = __bundle_base_environment,");
     chunks.push("        __newindex = __bundle_base_environment,");

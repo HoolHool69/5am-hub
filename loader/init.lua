@@ -108,9 +108,14 @@ local function ResolveProjectRoot(): any?
         return nil
     end
 
+    local scriptParent = script.Parent
+    if not scriptParent then
+        return nil
+    end
+
     local candidates = {
-        script.Parent,
-        script.Parent.Parent,
+        scriptParent,
+        scriptParent.Parent,
     }
 
     for _, candidate in candidates do
@@ -119,7 +124,7 @@ local function ResolveProjectRoot(): any?
         end
     end
 
-    return script.Parent
+    return scriptParent
 end
 
 local function ResolveUiReference(options: any, projectRoot: any): any?
