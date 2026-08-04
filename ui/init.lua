@@ -450,6 +450,11 @@ function UI:_EnsureRootGui(): any
         end
     end
 
+    if not rootGui.Parent then
+        rootGui:Destroy()
+        error("5AM Hub could not attach its ScreenGui to gethui, CoreGui, or PlayerGui", 2)
+    end
+
     self.RootGui = rootGui
     return rootGui
 end

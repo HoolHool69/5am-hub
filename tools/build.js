@@ -214,6 +214,18 @@ function TransformModule(moduleRecord, availableModules) {
     };
 }
 
+function RenderLuaLongString(source) {
+    for (let delimiterSize = 1; delimiterSize <= 12; delimiterSize += 1) {
+        const equals = "=".repeat(delimiterSize);
+        const closingDelimiter = `]${equals}]`;
+        if (!source.includes(closingDelimiter)) {
+            return `[${equals}[\n${source}\n]${equals}]`;
+        }
+    }
+
+    Fail("Could not find a safe Lua long-string delimiter for a bundled module");
+}
+
 function RenderBundle(modules) {
     const transformedModules = [...modules.values()]
         .map((moduleRecord) => TransformModule(moduleRecord, modules))
@@ -238,11 +250,18 @@ function RenderBundle(modules) {
         "]]",
         "",
         "local __FIVE_AM_BUNDLED = true",
-        "local __bundle_modules = {}",
+        "local __bundle_sources = {}",
         "local __bundle_cache = {}",
         "local __bundle_loaded = {}",
         "local __bundle_loading = {}",
+        "local __bundle_compiler = loadstring",
+        "local __bundle_set_environment = setfenv",
+        "local __bundle_base_environment = getfenv(0)",
         "local __bundle_require",
+        "",
+        "if type(__bundle_compiler) ~= \"function\" or type(__bundle_set_environment) ~= \"function\" then",
+        "    error(\"5AM Hub requires loadstring and setfenv support\", 0)",
+        "end",
         "",
     ];
 
@@ -251,9 +270,7 @@ function RenderBundle(modules) {
             ? moduleRecord.dependencies.join(", ")
             : "none";
         chunks.push(`-- Module: ${moduleRecord.relativePath} (dependencies: ${dependencyLabel})`);
-        chunks.push(`__bundle_modules[${JSON.stringify(moduleRecord.name)}] = function()`);
-        chunks.push(moduleRecord.source);
-        chunks.push("end");
+        chunks.push(`__bundle_sources[${JSON.stringify(moduleRecord.name)}] = ${RenderLuaLongString(moduleRecord.source)}`);
         chunks.push("");
     }
 
@@ -262,8 +279,8 @@ function RenderBundle(modules) {
     chunks.push("        return __bundle_cache[moduleName]");
     chunks.push("    end");
     chunks.push("");
-    chunks.push("    local moduleFactory = __bundle_modules[moduleName]");
-    chunks.push("    if not moduleFactory then");
+    chunks.push("    local moduleSource = __bundle_sources[moduleName]");
+    chunks.push("    if not moduleSource then");
     chunks.push("        error(string.format(\"5AM bundle module %q does not exist\", tostring(moduleName)), 2)");
     chunks.push("    end");
     chunks.push("    if __bundle_loading[moduleName] then");
@@ -271,7 +288,22 @@ function RenderBundle(modules) {
     chunks.push("    end");
     chunks.push("");
     chunks.push("    __bundle_loading[moduleName] = true");
-    chunks.push("    local success, valueOrError = pcall(moduleFactory)");
+    chunks.push("    local moduleChunk, compileError = __bundle_compiler(moduleSource)");
+    chunks.push("    if type(moduleChunk) ~= \"function\" then");
+    chunks.push("        __bundle_loading[moduleName] = nil");
+    chunks.push("        error(string.format(\"Failed to compile bundled module %q: %s\", tostring(moduleName), tostring(compileError)), 0)");
+    chunks.push("    end");
+    chunks.push("");
+    chunks.push("    local moduleEnvironment = setmetatable({");
+    chunks.push("        __FIVE_AM_BUNDLED = __FIVE_AM_BUNDLED,");
+    chunks.push("        __bundle_require = __bundle_require,");
+    chunks.push("    }, {");
+    chunks.push("        __index = __bundle_base_environment,");
+    chunks.push("        __newindex = __bundle_base_environment,");
+    chunks.push("    })");
+    chunks.push("    __bundle_set_environment(moduleChunk, moduleEnvironment)");
+    chunks.push("");
+    chunks.push("    local success, valueOrError = pcall(moduleChunk)");
     chunks.push("    __bundle_loading[moduleName] = nil");
     chunks.push("");
     chunks.push("    if not success then");
@@ -309,7 +341,15 @@ function RenderBundle(modules) {
     chunks.push("})");
     chunks.push("__loader.LastStartResult = __startResult");
     chunks.push("if not __startResult.Success then");
-    chunks.push("    warn(string.format(\"5AM Hub startup failed [%s]: %s\", tostring(__startResult.Code), tostring(__startResult.Message)))");
+    chunks.push("    error(string.format(\"5AM Hub startup failed [%s]: %s\", tostring(__startResult.Code), tostring(__startResult.Message)), 0)");
+    chunks.push("end");
+    chunks.push("if type(__startResult.Game) ~= \"table\" or __startResult.Game.Success ~= true then");
+    chunks.push("    local gameMessage = if type(__startResult.Game) == \"table\" then __startResult.Game.Message else \"No game result was returned\"");
+    chunks.push("    local gameErrors = if type(__startResult.Game) == \"table\" then __startResult.Game.Errors else nil");
+    chunks.push("    if type(gameErrors) == \"table\" and gameErrors[1] then");
+    chunks.push("        gameMessage = string.format(\"%s (%s: %s)\", tostring(gameMessage), tostring(gameErrors[1].Code), tostring(gameErrors[1].Message))");
+    chunks.push("    end");
+    chunks.push("    error(string.format(\"5AM Hub module initialization failed: %s\", tostring(gameMessage)), 0)");
     chunks.push("end");
     chunks.push("");
     chunks.push("return __loader");
