@@ -2,13 +2,12 @@
 
 local Players = game:GetService("Players")
 
-local Remotes = require(script:WaitForChild("remotes"))
-local featuresFolder = script:WaitForChild("features")
+local Remotes = require(script.remotes)
 local featureModules = {
-    require(featuresFolder:WaitForChild("farm")),
-    require(featuresFolder:WaitForChild("inventory")),
-    require(featuresFolder:WaitForChild("teleports")),
-    require(featuresFolder:WaitForChild("visuals")),
+    require(script.features.farm),
+    require(script.features.inventory),
+    require(script.features.teleports),
+    require(script.features.visuals),
 }
 
 local activeCleanup: (() -> ())? = nil

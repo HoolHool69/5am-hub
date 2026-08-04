@@ -3,9 +3,10 @@
 /**
  * 5AM Hub standalone bundler.
  *
- * Bundles loader/*.lua plus the shared UI and universal game module into one
- * executable Luau artifact. Static ModuleScript requires are rewritten to a
- * lazy internal registry; runtime/external requires remain untouched.
+ * Bundles loader/*.lua, the shared UI, the universal module, and every game
+ * package listed in games/manifest.json into one executable Luau artifact.
+ * Static ModuleScript requires are rewritten to a lazy internal registry;
+ * runtime/external requires remain untouched.
  */
 
 "use strict";
@@ -20,8 +21,10 @@ const outputFile = path.join(outputDirectory, "loader.lua");
 const entryModule = "loader/init";
 const uiModule = "ui/init";
 const universalModule = "games/_universal/init";
+const gamesDirectory = path.join(projectRoot, "games");
+const manifestFile = path.join(gamesDirectory, "manifest.json");
 
-const sourceGroups = [
+const baseSourceGroups = [
     {
         directory: path.join(projectRoot, "loader"),
         prefix: "loader",
@@ -51,6 +54,68 @@ function NormalizePath(filePath) {
     return filePath.split(path.sep).join("/");
 }
 
+function ReadGameRegistrations() {
+    if (!fs.existsSync(manifestFile)) {
+        Fail(`Game manifest does not exist: ${manifestFile}`);
+    }
+
+    let manifest;
+    try {
+        manifest = JSON.parse(fs.readFileSync(manifestFile, "utf8"));
+    } catch (error) {
+        Fail(`Could not parse games/manifest.json: ${error instanceof Error ? error.message : String(error)}`);
+    }
+
+    const entries = manifest && typeof manifest === "object" ? (manifest.Games || manifest) : null;
+    if (!entries || typeof entries !== "object" || Array.isArray(entries)) {
+        Fail("games/manifest.json must contain a Games object");
+    }
+
+    const registrations = [];
+    const seenPlaceIds = new Set();
+
+    for (const [key, entry] of Object.entries(entries)) {
+        if (key.startsWith("_")) {
+            continue;
+        }
+        if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+            Fail(`Manifest entry ${key} must be an object`);
+        }
+
+        const placeId = Number(entry.PlaceId ?? entry.PlaceID ?? key);
+        if (!Number.isSafeInteger(placeId) || placeId <= 0) {
+            Fail(`Manifest entry ${key} has an invalid PlaceId`);
+        }
+        if (seenPlaceIds.has(placeId)) {
+            Fail(`Manifest contains duplicate PlaceId ${placeId}`);
+        }
+
+        if (typeof entry.Module !== "string" || entry.Module.trim() === "") {
+            Fail(`Manifest entry ${key} must define a Module directory`);
+        }
+
+        let moduleDirectory = NormalizePath(entry.Module.trim());
+        moduleDirectory = moduleDirectory.replace(/^games\//u, "");
+        moduleDirectory = moduleDirectory.replace(/\/init(?:\.lua)?$/u, "");
+        if (
+            moduleDirectory === ""
+            || path.isAbsolute(moduleDirectory)
+            || moduleDirectory.split("/").some((segment) => segment === "" || segment === "." || segment === "..")
+        ) {
+            Fail(`Manifest entry ${key} has an unsafe Module directory`);
+        }
+
+        seenPlaceIds.add(placeId);
+        registrations.push({
+            placeId,
+            moduleDirectory,
+            moduleName: `games/${moduleDirectory}/init`,
+        });
+    }
+
+    return registrations.sort((left, right) => left.placeId - right.placeId);
+}
+
 function CollectLuaFiles(directory, recursive, relativeDirectory = "") {
     if (!fs.existsSync(directory)) {
         Fail(`Source directory does not exist: ${directory}`);
@@ -73,8 +138,22 @@ function CollectLuaFiles(directory, recursive, relativeDirectory = "") {
     return files;
 }
 
-function ReadModules() {
+function ReadModules(gameRegistrations) {
     const modules = new Map();
+    const sourceGroups = [...baseSourceGroups];
+    const includedGameDirectories = new Set();
+
+    for (const registration of gameRegistrations) {
+        if (includedGameDirectories.has(registration.moduleDirectory)) {
+            continue;
+        }
+        includedGameDirectories.add(registration.moduleDirectory);
+        sourceGroups.push({
+            directory: path.join(gamesDirectory, ...registration.moduleDirectory.split("/")),
+            prefix: `games/${registration.moduleDirectory}`,
+            recursive: true,
+        });
+    }
 
     for (const group of sourceGroups) {
         const luaFiles = CollectLuaFiles(group.directory, group.recursive);
@@ -101,6 +180,13 @@ function ReadModules() {
     for (const requiredModule of [entryModule, uiModule, universalModule]) {
         if (!modules.has(requiredModule)) {
             Fail(`Required entry module is missing: ${requiredModule}.lua`);
+        }
+    }
+    for (const registration of gameRegistrations) {
+        if (!modules.has(registration.moduleName)) {
+            Fail(
+                `Manifest PlaceId ${registration.placeId} points to missing module ${registration.moduleName}.lua`,
+            );
         }
     }
 
@@ -226,7 +312,7 @@ function RenderLuaLongString(source) {
     Fail("Could not find a safe Lua long-string delimiter for a bundled module");
 }
 
-function RenderBundle(modules) {
+function RenderBundle(modules, gameRegistrations) {
     const transformedModules = [...modules.values()]
         .map((moduleRecord) => TransformModule(moduleRecord, modules))
         .sort((left, right) => left.name.localeCompare(right.name));
@@ -327,6 +413,18 @@ function RenderBundle(modules) {
     chunks.push("if not __registered then");
     chunks.push("    error(string.format(\"5AM universal module registration failed: %s\", tostring(__registrationError)), 0)");
     chunks.push("end");
+    for (const [index, registration] of gameRegistrations.entries()) {
+        const suffix = index + 1;
+        chunks.push(`local __game_registered_${suffix}, __game_registration_error_${suffix} = __registry:Register(`);
+        chunks.push(`    ${registration.placeId},`);
+        chunks.push(`    __bundle_require(${JSON.stringify(registration.moduleName)})`);
+        chunks.push(")");
+        chunks.push(`if not __game_registered_${suffix} then`);
+        chunks.push(
+            `    error(string.format(\"5AM game module registration failed for PlaceId ${registration.placeId}: %s\", tostring(__game_registration_error_${suffix})), 0)`,
+        );
+        chunks.push("end");
+    }
     chunks.push("__registry.Discover = false");
     chunks.push("");
     chunks.push("local __environment = __loader.Utils:GetEnvironment()");
@@ -360,6 +458,7 @@ function RenderBundle(modules) {
         buildId,
         content: chunks.join("\n"),
         modules: transformedModules,
+        games: gameRegistrations,
     };
 }
 
@@ -382,6 +481,7 @@ function WriteBundle(bundle, checkOnly) {
         console.log(`[5AM build] dist/loader.lua is already current (${bundle.buildId})`);
     }
     console.log(`[5AM build] bundled ${bundle.modules.length} modules`);
+    console.log(`[5AM build] registered ${bundle.games.length} game module(s)`);
 }
 
 function Main() {
@@ -396,8 +496,9 @@ function Main() {
         Fail(`Unknown argument(s): ${unknownArguments.join(", ")}`);
     }
 
-    const modules = ReadModules();
-    const bundle = RenderBundle(modules);
+    const gameRegistrations = ReadGameRegistrations();
+    const modules = ReadModules(gameRegistrations);
+    const bundle = RenderBundle(modules, gameRegistrations);
     WriteBundle(bundle, argumentsList.includes("--check"));
 }
 
