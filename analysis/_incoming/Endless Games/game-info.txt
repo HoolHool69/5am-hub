@@ -1,0 +1,12 @@
+Game: Endless Games
+PlaceId: 89035794510548
+JobId: 2eb1cc81-3e63-446c-9a92-e85f4ec24f88
+
+Summary:
+In this game, the player plays multiple different minigames inside of the game. The minigames include Flappy Wings, Helix Drop, Stack It, Knife Combo, Melon Merge, Chop Chop, Drop Numbers, Sharp Turns, Slice Fruits, Bike Rush, Crossy Traffic, Highway Rush, 2048, Speedy Wings, Block Rush, Frozen Tower, and Tower Builder. The rest of the games that are available, don't mind them because the player cannot play them without paying. And that's the whole game, are these couple minigames.
+
+Detected client-visible information:
+- Workspace instances: 34916
+- Replicated network remotes: 92
+- ProximityPrompts: 0
+- Trash/search-related ProximityPrompts: 0

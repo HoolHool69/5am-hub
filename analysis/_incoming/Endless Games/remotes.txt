@@ -1,0 +1,96 @@
+# Replicated network remotes
+# These are the remotes currently visible to the client.
+# This file does not determine what arguments each remote expects.
+
+[1] game.ReplicatedStorage.shared/network@GlobalEvents.abandonRun [RemoteEvent] {id="abandonRun"}
+[2] game.ReplicatedStorage.shared/network@GlobalEvents.acceptRematch [RemoteEvent] {id="acceptRematch"}
+[3] game.ReplicatedStorage.shared/network@GlobalEvents.adReviveFailed [RemoteEvent] {id="adReviveFailed"}
+[4] game.ReplicatedStorage.shared/network@GlobalEvents.charmSync [RemoteEvent] {id="charmSync"}
+[5] game.ReplicatedStorage.shared/network@GlobalEvents.createLobby [RemoteEvent] {id="createLobby"}
+[6] game.ReplicatedStorage.shared/network@GlobalEvents.dailyRewardSettled [RemoteEvent] {id="dailyRewardSettled"}
+[7] game.ReplicatedStorage.shared/network@GlobalEvents.declineRematch [RemoteEvent] {id="declineRematch"}
+[8] game.ReplicatedStorage.shared/network@GlobalEvents.friendBestsUpdated [RemoteEvent] {id="friendBestsUpdated"}
+[9] game.ReplicatedStorage.shared/network@GlobalEvents.friendCoinsUpdated [RemoteEvent] {id="friendCoinsUpdated"}
+[10] game.ReplicatedStorage.shared/network@GlobalEvents.friendIdsUpdated [RemoteEvent] {id="friendIdsUpdated"}
+[11] game.ReplicatedStorage.shared/network@GlobalEvents.joinLobby [RemoteEvent] {id="joinLobby"}
+[12] game.ReplicatedStorage.shared/network@GlobalEvents.leaveLobby [RemoteEvent] {id="leaveLobby"}
+[13] game.ReplicatedStorage.shared/network@GlobalEvents.lobbyActionDenied [RemoteEvent] {id="lobbyActionDenied"}
+[14] game.ReplicatedStorage.shared/network@GlobalEvents.markTutorialSeen [RemoteEvent] {id="markTutorialSeen"}
+[15] game.ReplicatedStorage.shared/network@GlobalEvents.matchAssigned [RemoteEvent] {id="matchAssigned"}
+[16] game.ReplicatedStorage.shared/network@GlobalEvents.matchCancelled [RemoteEvent] {id="matchCancelled"}
+[17] game.ReplicatedStorage.shared/network@GlobalEvents.matchEliminated [RemoteEvent] {id="matchEliminated"}
+[18] game.ReplicatedStorage.shared/network@GlobalEvents.matchEnded [RemoteEvent] {id="matchEnded"}
+[19] game.ReplicatedStorage.shared/network@GlobalEvents.matchGo [RemoteEvent] {id="matchGo"}
+[20] game.ReplicatedStorage.shared/network@GlobalEvents.matchOpponentSnapshots [UnreliableRemoteEvent] {id="unreliable:matchOpponentSnapshots"}
+[21] game.ReplicatedStorage.shared/network@GlobalEvents.matchReady [RemoteEvent] {id="matchReady"}
+[22] game.ReplicatedStorage.shared/network@GlobalEvents.matchSnapshot [UnreliableRemoteEvent] {id="unreliable:matchSnapshot"}
+[23] game.ReplicatedStorage.shared/network@GlobalEvents.matchStandings [RemoteEvent] {id="matchStandings"}
+[24] game.ReplicatedStorage.shared/network@GlobalEvents.matchTimeUp [RemoteEvent] {id="matchTimeUp"}
+[25] game.ReplicatedStorage.shared/network@GlobalEvents.parkRun [RemoteEvent] {id="parkRun"}
+[26] game.ReplicatedStorage.shared/network@GlobalEvents.rematchClosed [RemoteEvent] {id="rematchClosed"}
+[27] game.ReplicatedStorage.shared/network@GlobalEvents.rematchOffered [RemoteEvent] {id="rematchOffered"}
+[28] game.ReplicatedStorage.shared/network@GlobalEvents.reportAdReviveAvailability [RemoteEvent] {id="reportAdReviveAvailability"}
+[29] game.ReplicatedStorage.shared/network@GlobalEvents.reportDevice [RemoteEvent] {id="reportDevice"}
+[30] game.ReplicatedStorage.shared/network@GlobalEvents.requestAdRevive [RemoteEvent] {id="requestAdRevive"}
+[31] game.ReplicatedStorage.shared/network@GlobalEvents.requestAfkRejoin [RemoteEvent] {id="requestAfkRejoin"}
+[32] game.ReplicatedStorage.shared/network@GlobalEvents.requestFriendBests [RemoteEvent] {id="requestFriendBests"}
+[33] game.ReplicatedStorage.shared/network@GlobalEvents.requestFriendCoins [RemoteEvent] {id="requestFriendCoins"}
+[34] game.ReplicatedStorage.shared/network@GlobalEvents.requestFriendIds [RemoteEvent] {id="requestFriendIds"}
+[35] game.ReplicatedStorage.shared/network@GlobalEvents.requestState [RemoteEvent] {id="requestState"}
+[36] game.ReplicatedStorage.shared/network@GlobalEvents.reviveTokenGranted [RemoteEvent] {id="reviveTokenGranted"}
+[37] game.ReplicatedStorage.shared/network@GlobalEvents.reviveWindowClosed [RemoteEvent] {id="reviveWindowClosed"}
+[38] game.ReplicatedStorage.shared/network@GlobalEvents.runCheckpoint [RemoteEvent] {id="runCheckpoint"}
+[39] game.ReplicatedStorage.shared/network@GlobalEvents.runScoringStopped [RemoteEvent] {id="runScoringStopped"}
+[40] game.ReplicatedStorage.shared/network@GlobalEvents.saveEggFarm [RemoteEvent] {id="saveEggFarm"}
+[41] game.ReplicatedStorage.shared/network@GlobalEvents.startLobby [RemoteEvent] {id="startLobby"}
+[42] game.ReplicatedStorage.shared/network@GlobalEvents.updateSettings [RemoteEvent] {id="updateSettings"}
+[43] game.ReplicatedStorage.shared/network@GlobalEvents.voteGame [RemoteEvent] {id="voteGame"}
+[44] game.ReplicatedStorage.shared/network@GlobalFunctions.beginEarlyAccessPurchase [RemoteEvent] {id="beginEarlyAccessPurchase"}
+[45] game.ReplicatedStorage.shared/network@GlobalFunctions.endRun [RemoteEvent] {id="endRun"}
+[46] game.ReplicatedStorage.shared/network@GlobalFunctions.fetchCoinLeaderboard [RemoteEvent] {id="fetchCoinLeaderboard"}
+[47] game.ReplicatedStorage.shared/network@GlobalFunctions.fetchDailyBoard [RemoteEvent] {id="fetchDailyBoard"}
+[48] game.ReplicatedStorage.shared/network@GlobalFunctions.fetchDeveloperStats [RemoteEvent] {id="fetchDeveloperStats"}
+[49] game.ReplicatedStorage.shared/network@GlobalFunctions.fetchLeaderboard [RemoteEvent] {id="fetchLeaderboard"}
+[50] game.ReplicatedStorage.shared/network@GlobalFunctions.fetchPhotoAccess [RemoteEvent] {id="fetchPhotoAccess"}
+[51] game.ReplicatedStorage.shared/network@GlobalFunctions.fetchPlayerBadges [RemoteEvent] {id="fetchPlayerBadges"}
+[52] game.ReplicatedStorage.shared/network@GlobalFunctions.grantPhotoAccess [RemoteEvent] {id="grantPhotoAccess"}
+[53] game.ReplicatedStorage.shared/network@GlobalFunctions.redeemRevive [RemoteEvent] {id="redeemRevive"}
+[54] game.ReplicatedStorage.shared/network@GlobalFunctions.requestBotPersona [RemoteEvent] {id="requestBotPersona"}
+[55] game.ReplicatedStorage.shared/network@GlobalFunctions.requestTrafficRiderPersona [RemoteEvent] {id="requestTrafficRiderPersona"}
+[56] game.ReplicatedStorage.shared/network@GlobalFunctions.resumeRun [RemoteEvent] {id="resumeRun"}
+[57] game.ReplicatedStorage.shared/network@GlobalFunctions.revokePhotoAccess [RemoteEvent] {id="revokePhotoAccess"}
+[58] game.ReplicatedStorage.shared/network@GlobalFunctions.startDailyRun [RemoteEvent] {id="startDailyRun"}
+[59] game.ReplicatedStorage.shared/network@GlobalFunctions.startRun [RemoteEvent] {id="startRun"}
+[60] game.ReplicatedStorage.shared/network@GlobalFunctions.unlockGame [RemoteEvent] {id="unlockGame"}
+[61] game.RobloxReplicatedStorage.BuildExperiencePlaytestTeleport [RemoteEvent]
+[62] game.RobloxReplicatedStorage.CanChatWith [RemoteEvent]
+[63] game.RobloxReplicatedStorage.CreateOrJoinParty [RemoteEvent]
+[64] game.RobloxReplicatedStorage.ExpChatFeatureValueChanged [RemoteEvent]
+[65] game.RobloxReplicatedStorage.ExperienceChat.WhisperChat [RemoteFunction]
+[66] game.RobloxReplicatedStorage.GetServerChannel [RemoteFunction]
+[67] game.RobloxReplicatedStorage.GetServerType [RemoteFunction]
+[68] game.RobloxReplicatedStorage.GetServerVersion [RemoteFunction]
+[69] game.RobloxReplicatedStorage.IntegrityCheckProcessorKey2_AutomaticAssetCaptureSender_LocalizationService [RemoteEvent]
+[70] game.RobloxReplicatedStorage.IntegrityCheckProcessorKey2_DynamicTranslationSender_LocalizationService [RemoteEvent]
+[71] game.RobloxReplicatedStorage.IntegrityCheckProcessorKey2_LocalizationTableAnalyticsSender_LocalizationService [RemoteEvent]
+[72] game.RobloxReplicatedStorage.IntegrityCheckProcessorKey2_TextSafetyAnalyticsSender_LocalizationService [RemoteEvent]
+[73] game.RobloxReplicatedStorage.ModerateChatSettingUpdated [RemoteEvent]
+[74] game.RobloxReplicatedStorage.NewPlayerCanManageDetails [RemoteEvent]
+[75] game.RobloxReplicatedStorage.NewPlayerGroupDetails [RemoteEvent]
+[76] game.RobloxReplicatedStorage.PlatformLeaderboardPush [RemoteEvent]
+[77] game.RobloxReplicatedStorage.PlatformLeaderboardTabClosed [RemoteEvent]
+[78] game.RobloxReplicatedStorage.PlatformLeaderboardTabOpened [RemoteEvent]
+[79] game.RobloxReplicatedStorage.ReferredPlayerJoin [RemoteEvent]
+[80] game.RobloxReplicatedStorage.RequestDeviceCameraOrientationCapability [RemoteEvent]
+[81] game.RobloxReplicatedStorage.RequestPlayerProfileSettings [RemoteEvent]
+[82] game.RobloxReplicatedStorage.SendPlayerBlockList [RemoteEvent]
+[83] game.RobloxReplicatedStorage.SendPlayerProfileSettings [RemoteEvent]
+[84] game.RobloxReplicatedStorage.ServerSideBulkPurchaseEvent [RemoteEvent]
+[85] game.RobloxReplicatedStorage.SetDialogInUse [RemoteEvent]
+[86] game.RobloxReplicatedStorage.SetPlayerBlockList [RemoteEvent]
+[87] game.RobloxReplicatedStorage.SetUserActive [RemoteEvent]
+[88] game.RobloxReplicatedStorage.ShowFriendJoinedPlayerToast [RemoteEvent]
+[89] game.RobloxReplicatedStorage.ShowPlayerJoinedFriendsToast [RemoteEvent]
+[90] game.RobloxReplicatedStorage.UpdateLocalPlayerBlockList [RemoteEvent]
+[91] game.RobloxReplicatedStorage.UpdatePlayerBlockList [RemoteEvent]
+[92] game.RobloxReplicatedStorage.UpdatePlayerProfileSettings [RemoteEvent]
