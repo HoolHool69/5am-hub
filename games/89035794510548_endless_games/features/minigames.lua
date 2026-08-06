@@ -10,11 +10,12 @@ function Minigames.Init(context: any)
     local behaviorSection = tab:AddSection("Game-Specific Behavior")
 
     autoSection:AddSlider("EndlessAutoActionInterval", {
-        Title = "Action Interval",
-        Min = 0.05,
+        Title = "Maximum Action Interval",
+        Description = "Precision games automatically poll faster when their state requires it.",
+        Min = 0.02,
         Max = 1,
-        Default = 0.2,
-        Increment = 0.05,
+        Default = 0.08,
+        Increment = 0.01,
         Suffix = "s",
         Flag = "EndlessAutoActionInterval",
     })
@@ -35,28 +36,28 @@ function Minigames.Init(context: any)
 
     behaviorSection:AddButton({
         Title = "Precision / Arcade Games",
-        Description = "Perfect Stack It drops, collision-free Knife Combo, safe Chop Chop, Helix rotation, Flappy taps, and Sharp Turns.",
+        Description = "Predictive Flappy flight, gap-centered Helix drops, exact Stack It drops, branch lookahead, and path-aware Sharp Turns.",
         Callback = function()
             context.Notify("Autopilot Profiles", "Flappy Wings, Helix Drop, Stack It, Knife Combo, Chop Chop, and Sharp Turns are enabled through Auto Play.", 8)
         end,
     })
     behaviorSection:AddButton({
         Title = "Puzzle Games",
-        Description = "2048 direction cycle, Melon Merge spread, Drop Numbers columns, and a Block Rush placement solver.",
+        Description = "Depth-searched 2048, tier-aware Melon Merge, chain-planned Drop Numbers, and line-clear Block Rush placement.",
         Callback = function()
             context.Notify("Autopilot Profiles", "2048, Melon Merge, Drop Numbers, and Block Rush are enabled through Auto Play.", 8)
         end,
     })
     behaviorSection:AddButton({
         Title = "Action / Traffic Games",
-        Description = "Non-bomb fruit slicing, Bike Rush traffic clearing, Crossy forwarding, Highway collision bypass, and Speedy Wings piloting.",
+        Description = "Non-bomb slicing, Bike Rush clearing, Crossy forwarding, real Highway near-miss tracking, and slope-aware Speedy Wings piloting.",
         Callback = function()
             context.Notify("Autopilot Profiles", "Slice Fruits, Bike Rush, Crossy Traffic, Highway Rush, and Speedy Wings are enabled through Auto Play.", 8)
         end,
     })
     behaviorSection:AddButton({
         Title = "Tower Games",
-        Description = "Frozen Tower fall recovery and centered Tower Builder releases.",
+        Description = "Multi-floor Frozen Tower routing and sway-compensated perfect Tower Builder releases.",
         Callback = function()
             context.Notify("Autopilot Profiles", "Frozen Tower and Tower Builder are enabled through Auto Play.", 8)
         end,
@@ -68,8 +69,8 @@ function Minigames.Init(context: any)
             if context.Flags:Get("EndlessAutoPlay") == true then
                 context.Runtime:AutoStep()
             end
-            local interval = tonumber(context.Flags:Get("EndlessAutoActionInterval")) or 0.2
-            task.wait(math.max(0.05, interval))
+            local interval = tonumber(context.Flags:Get("EndlessAutoActionInterval")) or 0.08
+            task.wait(context.Runtime:GetStepInterval(interval))
         end
     end)
 

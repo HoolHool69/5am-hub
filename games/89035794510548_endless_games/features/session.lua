@@ -78,23 +78,6 @@ function Session.Init(context: any)
         end,
     })
 
-    runSection:AddSlider("EndlessManualFinishScore", {
-        Title = "Finish Score",
-        Min = 0,
-        Max = 1000000,
-        Default = 10000,
-        Increment = 100,
-        Flag = "EndlessManualFinishScore",
-    })
-    runSection:AddButton({
-        Title = "Finish Current Run",
-        Description = "Ends the active run with the selected finish score.",
-        Callback = function()
-            local score = tonumber(context.Flags:Get("EndlessManualFinishScore")) or 10000
-            local success, message = context.Runtime:FinishCurrent(score)
-            context.Notify(if success then "Run Finished" else "Finish Failed", message, if success then 4 else 7)
-        end,
-    })
     runSection:AddButton({
         Title = "Restart Current Run",
         Callback = function()
