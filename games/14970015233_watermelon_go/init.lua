@@ -5,7 +5,6 @@ local Players = game:GetService("Players")
 local Remotes = require(script.remotes)
 local Runtime = require(script.runtime)
 local featureModules = {
-    require(script.features.session),
     require(script.features.autoplayer),
     require(script.features.fruit_control),
     require(script.features.visuals),
@@ -20,10 +19,10 @@ local module = {
     Meta = {
         Name = "Watermelon Go",
         DisplayName = "Watermelon Go",
-        Version = "1.0.0",
+        Version = "1.1.0",
         Author = "5AM Hub",
         PlaceIds = { 14970015233 },
-        Description = "Tier-aware Suika autoplayer, merge control, overflow protection, and fruit ESP.",
+        Description = "HUD-driven Suika autoplayer, tier-phased merge physics, and loss protection.",
     },
 }
 

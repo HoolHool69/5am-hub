@@ -1,5 +1,6 @@
 --!strict
 
+local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
 local Runtime = {}
@@ -18,7 +19,6 @@ local FRUIT_NAMES = {
     "Wintermelon",
     "Watermelon",
 }
-
 local FRUIT_POINTS = { 1, 3, 6, 10, 15, 21, 28, 36, 45, 55, 66 }
 local FRUIT_LEVELS: {[string]: number} = {}
 for level, fruitName in FRUIT_NAMES do
@@ -52,8 +52,8 @@ end
 
 local function NormalizeFruitName(value: any): (string?, number?)
     if type(value) == "number" then
-        local fruitName = FRUIT_NAMES[math.floor(value)]
-        return fruitName, if fruitName then math.floor(value) else nil
+        local level = math.floor(value)
+        return FRUIT_NAMES[level], if FRUIT_NAMES[level] then level else nil
     end
     if type(value) ~= "string" then
         return nil, nil
@@ -63,11 +63,10 @@ local function NormalizeFruitName(value: any): (string?, number?)
     if level then
         return FRUIT_NAMES[level], level
     end
-
     local numericLevel = tonumber(value)
     if numericLevel then
-        local fruitName = FRUIT_NAMES[math.floor(numericLevel)]
-        return fruitName, if fruitName then math.floor(numericLevel) else nil
+        level = math.floor(numericLevel)
+        return FRUIT_NAMES[level], if FRUIT_NAMES[level] then level else nil
     end
     return nil, nil
 end
@@ -84,7 +83,6 @@ local function FruitIdentity(instance: Instance): (string?, number?)
     if fruitName then
         return fruitName, level
     end
-
     for _, descendant in instance:GetDescendants() do
         for _, attributeName in { "Fruit", "FruitType", "FruitName", "Type", "Level" } do
             fruitName, level = NormalizeFruitName(descendant:GetAttribute(attributeName))
@@ -96,11 +94,22 @@ local function FruitIdentity(instance: Instance): (string?, number?)
     return nil, nil
 end
 
+local function IsLeveling(instance: Instance, part: BasePart): boolean
+    return instance:GetAttribute("LevelUp") == true or part:GetAttribute("LevelUp") == true
+end
+
 function Runtime.new(context: any): any
+    local constraintFolder = Instance.new("Folder")
+    constraintFolder.Name = "FiveAMWatermelonPhysics"
+    constraintFolder.Parent = Workspace
+
     return setmetatable({
         Context = context,
         Destroyed = false,
-        MergeCooldowns = setmetatable({}, { __mode = "k" }),
+        ConstraintFolder = constraintFolder,
+        PhaseRecords = {},
+        OriginalPhysics = setmetatable({}, { __mode = "k" }),
+        OriginalTop = setmetatable({}, { __mode = "k" }),
     }, Runtime)
 end
 
@@ -119,12 +128,7 @@ function Runtime:GetPlayspace(): Instance?
     if duelSpace and duelId ~= nil and tostring(duelId) ~= "" then
         return duelSpace
     end
-
-    local singlePlayer = playspaces:FindFirstChild("SinglePlayer")
-    if singlePlayer then
-        return singlePlayer
-    end
-    return duelSpace
+    return playspaces:FindFirstChild("SinglePlayer") or duelSpace
 end
 
 function Runtime:GetBoxParts(playspace: Instance?): Instance?
@@ -137,43 +141,90 @@ function Runtime:GetDropper(playspace: Instance?): BasePart?
     return AsPart(if boxParts then boxParts:FindFirstChild("Dropper") else nil)
 end
 
-function Runtime:GetActiveFolder(playspace: Instance?): Instance?
-    local current = playspace or self:GetPlayspace()
-    return if current then current:FindFirstChild("ActiveFruits") else nil
+function Runtime:GetTopPart(): BasePart?
+    local boxParts = self:GetBoxParts(nil)
+    return AsPart(if boxParts then boxParts:FindFirstChild("Top") else nil)
 end
 
-function Runtime:GetBounds(playspace: Instance?): (number, number, number, number)
-    local current = playspace or self:GetPlayspace()
-    local boxParts = self:GetBoxParts(current)
-    local leftMarker = AsPart(if current then current:FindFirstChild("FarthestLeft") else nil)
-    local rightMarker = AsPart(if current then current:FindFirstChild("FarthestRight") else nil)
+function Runtime:GetActiveFolder(): Instance?
+    local playspace = self:GetPlayspace()
+    return if playspace then playspace:FindFirstChild("ActiveFruits") else nil
+end
+
+function Runtime:GetGeometry(): any
+    local playspace = self:GetPlayspace()
+    local boxParts = self:GetBoxParts(playspace)
+    local leftMarker = AsPart(if playspace then playspace:FindFirstChild("FarthestLeft") else nil)
+    local rightMarker = AsPart(if playspace then playspace:FindFirstChild("FarthestRight") else nil)
     local leftWall = AsPart(if boxParts then boxParts:FindFirstChild("LeftWall") else nil)
     local rightWall = AsPart(if boxParts then boxParts:FindFirstChild("RightWall") else nil)
     local base = AsPart(if boxParts then boxParts:FindFirstChild("Base") else nil)
     local top = AsPart(if boxParts then boxParts:FindFirstChild("Top") else nil)
 
-    local leftX = if leftMarker
-        then leftMarker.Position.X
-        elseif leftWall then leftWall.Position.X + leftWall.Size.X * 0.5
-        else -10
-    local rightX = if rightMarker
-        then rightMarker.Position.X
-        elseif rightWall then rightWall.Position.X - rightWall.Size.X * 0.5
-        else 10
-    if leftX > rightX then
-        leftX, rightX = rightX, leftX
+    local leftPosition = if leftMarker
+        then leftMarker.Position
+        elseif leftWall then leftWall.Position
+        else Vector3.new(-10, 0, 0)
+    local rightPosition = if rightMarker
+        then rightMarker.Position
+        elseif rightWall then rightWall.Position
+        else Vector3.new(10, 0, 0)
+    local planarDelta = Vector3.new(
+        rightPosition.X - leftPosition.X,
+        0,
+        rightPosition.Z - leftPosition.Z
+    )
+    if planarDelta.Magnitude < 0.1 then
+        planarDelta = Vector3.new(20, 0, 0)
     end
 
     local baseY = if base then base.Position.Y + base.Size.Y * 0.5 else 0
     local topY = if top then top.Position.Y else baseY + 20
-    if topY < baseY then
+    if topY <= baseY + 1 then
         topY = baseY + 20
     end
-    return leftX, rightX, baseY, topY
+    return {
+        Origin = leftPosition,
+        Horizontal = planarDelta.Unit,
+        Width = planarDelta.Magnitude,
+        BaseY = baseY,
+        TopY = topY,
+        Base = base,
+        Top = top,
+    }
+end
+
+function Runtime:Coordinate(position: Vector3, geometry: any?): number
+    local board = geometry or self:GetGeometry()
+    local planarOffset = Vector3.new(
+        position.X - board.Origin.X,
+        0,
+        position.Z - board.Origin.Z
+    )
+    return planarOffset:Dot(board.Horizontal)
+end
+
+function Runtime:ClampCoordinate(coordinate: number, margin: number?): number
+    local geometry = self:GetGeometry()
+    local padding = math.max(0, margin or 0.35)
+    if geometry.Width <= padding * 2 then
+        return geometry.Width * 0.5
+    end
+    return math.clamp(coordinate, padding, geometry.Width - padding)
+end
+
+function Runtime:PositionAt(original: Vector3, coordinate: number, y: number?): Vector3
+    local geometry = self:GetGeometry()
+    local currentCoordinate = self:Coordinate(original, geometry)
+    local shifted = original + geometry.Horizontal * (coordinate - currentCoordinate)
+    if y then
+        shifted += Vector3.new(0, y - shifted.Y, 0)
+    end
+    return shifted
 end
 
 function Runtime:GetActiveFruits(): {any}
-    local folder = self:GetActiveFolder(nil)
+    local folder = self:GetActiveFolder()
     local fruits = {}
     if not folder then
         return fruits
@@ -182,7 +233,7 @@ function Runtime:GetActiveFruits(): {any}
     for _, child in folder:GetChildren() do
         local part = AsPart(child)
         local fruitName, level = FruitIdentity(child)
-        if part and fruitName and level and child:GetAttribute("LevelUp") ~= true then
+        if part and fruitName and level and not IsLeveling(child, part) then
             table.insert(fruits, {
                 Instance = child,
                 Part = part,
@@ -226,37 +277,28 @@ function Runtime:GetCurrentFruitName(): (string?, number?)
     return nil, nil
 end
 
-function Runtime:ClampX(x: number, margin: number?): number
-    local leftX, rightX = self:GetBounds(nil)
-    local padding = math.max(0, margin or 0.35)
-    if rightX - leftX <= padding * 2 then
-        return (leftX + rightX) * 0.5
-    end
-    return math.clamp(x, leftX + padding, rightX - padding)
-end
-
-function Runtime:TierLaneX(level: number): number
-    local leftX, rightX = self:GetBounds(nil)
+function Runtime:TierLane(level: number): number
+    local geometry = self:GetGeometry()
     local laneCount = 5
     local lane = (math.max(1, level) - 1) % laneCount
-    local alpha = if laneCount > 1 then lane / (laneCount - 1) else 0.5
-    return self:ClampX(leftX + (rightX - leftX) * alpha, 0.5)
+    local alpha = lane / (laneCount - 1)
+    return self:ClampCoordinate(geometry.Width * alpha, 0.6)
 end
 
-function Runtime:LowestColumnX(): number
-    local leftX, rightX, baseY = self:GetBounds(nil)
+function Runtime:LowestColumn(): number
+    local geometry = self:GetGeometry()
     local fruits = self:GetActiveFruits()
-    local bestX = (leftX + rightX) * 0.5
+    local samples = 11
+    local bestCoordinate = geometry.Width * 0.5
     local bestHeight = math.huge
-    local samples = 9
 
     for index = 0, samples - 1 do
-        local alpha = index / (samples - 1)
-        local x = leftX + (rightX - leftX) * alpha
-        local columnHeight = baseY
+        local coordinate = geometry.Width * index / (samples - 1)
+        local columnHeight = geometry.BaseY
         for _, fruit in fruits do
-            local radius = math.max(fruit.Part.Size.X, fruit.Part.Size.Z) * 0.7
-            if math.abs(fruit.Part.Position.X - x) <= radius then
+            local fruitCoordinate = self:Coordinate(fruit.Part.Position, geometry)
+            local radius = math.max(fruit.Part.Size.X, fruit.Part.Size.Z) * 0.75
+            if math.abs(fruitCoordinate - coordinate) <= radius then
                 columnHeight = math.max(
                     columnHeight,
                     fruit.Part.Position.Y + fruit.Part.Size.Y * 0.5
@@ -265,13 +307,14 @@ function Runtime:LowestColumnX(): number
         end
         if columnHeight < bestHeight then
             bestHeight = columnHeight
-            bestX = x
+            bestCoordinate = coordinate
         end
     end
-    return self:ClampX(bestX, 0.5)
+    return self:ClampCoordinate(bestCoordinate, 0.6)
 end
 
-function Runtime:MatchingFruitX(fruitName: string): number?
+function Runtime:MatchingCoordinate(fruitName: string): number?
+    local geometry = self:GetGeometry()
     local candidates = {}
     for _, fruit in self:GetActiveFruits() do
         if fruit.Name == fruitName then
@@ -279,124 +322,189 @@ function Runtime:MatchingFruitX(fruitName: string): number?
         end
     end
     table.sort(candidates, function(left, right)
-        if left.Part.Position.Y == right.Part.Position.Y then
-            return left.Part.Position.X < right.Part.Position.X
-        end
         return left.Part.Position.Y > right.Part.Position.Y
     end)
     local target = candidates[1]
-    return if target then self:ClampX(target.Part.Position.X, target.Part.Size.X * 0.45) else nil
+    if not target then
+        return nil
+    end
+    return self:ClampCoordinate(
+        self:Coordinate(target.Part.Position, geometry),
+        math.max(target.Part.Size.X, target.Part.Size.Z) * 0.4
+    )
 end
 
-function Runtime:ChooseDropX(strategy: string): (number, string?)
+function Runtime:ChooseDropCoordinate(strategy: string): (number, string?)
     local fruitName, level = self:GetCurrentFruitName()
-    local leftX, rightX = self:GetBounds(nil)
-    local centerX = (leftX + rightX) * 0.5
-
-    if strategy == "Center Stack" then
-        return self:ClampX(centerX, 0.5), fruitName
+    local geometry = self:GetGeometry()
+    if strategy == "Center" then
+        return geometry.Width * 0.5, fruitName
     end
     if strategy == "Lowest Column" then
-        return self:LowestColumnX(), fruitName
+        return self:LowestColumn(), fruitName
     end
-    if strategy == "Tier Lanes" then
-        return self:TierLaneX(level or 1), fruitName
+    if strategy == "Tier Lane" then
+        return self:TierLane(level or 1), fruitName
     end
-
     if fruitName then
-        local matchingX = self:MatchingFruitX(fruitName)
-        if matchingX then
-            return matchingX, fruitName
+        local matching = self:MatchingCoordinate(fruitName)
+        if matching then
+            return matching, fruitName
         end
     end
-    return self:LowestColumnX(), fruitName
+    return self:LowestColumn(), fruitName
 end
 
-function Runtime:DropUsingInput(position: Vector3): any
+function Runtime:FindDropButton(): GuiButton?
+    local playerGui = self.Context.LocalPlayer:FindFirstChildOfClass("PlayerGui")
+    if not playerGui then
+        return nil
+    end
+    for _, descendant in playerGui:GetDescendants() do
+        if descendant:IsA("GuiButton") and descendant.Name == "DropButton" then
+            return descendant
+        end
+    end
+    return nil
+end
+
+function Runtime:MovePointerForDrop(worldPosition: Vector3): (() -> ())?
     local camera = Workspace.CurrentCamera
     if not camera then
-        return Result(false, "NO_CAMERA", "The current Roblox camera is unavailable.", nil)
+        return nil
     end
-
-    local viewportPoint, onScreen = camera:WorldToViewportPoint(position)
+    local viewportPoint, onScreen = camera:WorldToViewportPoint(worldPosition)
     if not onScreen then
-        return Result(false, "DROPPER_OFFSCREEN", "The active dropper is outside the camera view.", nil)
+        return nil
     end
 
+    local oldMousePosition = UserInputService:GetMouseLocation()
+    local oldMouseIconEnabled = UserInputService.MouseIconEnabled
     local x = math.floor(viewportPoint.X + 0.5)
-    local y = math.floor(viewportPoint.Y + 0.5)
+    local y = math.floor(oldMousePosition.Y + 0.5)
     local moveMouse = self.Context.Environment.mousemoveabs
         or self.Context.Environment.mouse_move_abs
-    local clickMouse = self.Context.Environment.mouse1click
-        or self.Context.Environment.mouse1_click
-    if type(moveMouse) == "function" and type(clickMouse) == "function" then
-        local ok, errorMessage = pcall(function()
-            moveMouse(x, y)
-            task.wait()
-            clickMouse()
-        end)
-        if ok then
-            return Result(true, "OK", "Dropped through the game's input controller.", nil)
+    if type(moveMouse) == "function" then
+        local moved = pcall(moveMouse, x, y)
+        if moved then
+            return function()
+                pcall(moveMouse, oldMousePosition.X, oldMousePosition.Y)
+                pcall(function()
+                    UserInputService.MouseIconEnabled = oldMouseIconEnabled
+                end)
+            end
         end
-        return Result(false, "INPUT_FAILED", tostring(errorMessage), nil)
     end
 
     local serviceOk, virtualInput = pcall(game.GetService, game, "VirtualInputManager")
     if serviceOk and virtualInput then
         local inputManager: any = virtualInput
-        local inputOk, inputError = pcall(function()
+        local moved = pcall(function()
             inputManager:SendMouseMoveEvent(x, y, game)
-            task.wait()
-            inputManager:SendMouseButtonEvent(x, y, 0, true, game, 0)
-            task.wait()
-            inputManager:SendMouseButtonEvent(x, y, 0, false, game, 0)
         end)
-        if inputOk then
-            return Result(true, "OK", "Dropped through the game's input controller.", nil)
+        if moved then
+            return function()
+                pcall(function()
+                    inputManager:SendMouseMoveEvent(
+                        math.floor(oldMousePosition.X + 0.5),
+                        math.floor(oldMousePosition.Y + 0.5),
+                        game
+                    )
+                    UserInputService.MouseIconEnabled = oldMouseIconEnabled
+                end)
+            end
         end
-        return Result(false, "INPUT_FAILED", tostring(inputError), nil)
     end
-
-    return Result(
-        false,
-        "INPUT_UNAVAILABLE",
-        "This executor exposes neither absolute mouse input nor VirtualInputManager.",
-        nil
-    )
+    return nil
 end
 
-function Runtime:DropOnce(strategy: string, jitterPercent: number?, method: string?): any
-    local dropper = self:GetDropper(nil)
-    if not dropper then
-        return Result(false, "NO_DROPPER", "The active Watermelon Go dropper was not found.", nil)
+function Runtime:ActivateDropButton(button: GuiButton): (boolean, string)
+    local fireSignal = self.Context.Environment.firesignal
+        or self.Context.Environment.fire_signal
+    if type(fireSignal) == "function" then
+        local activated = pcall(fireSignal, button.Activated)
+        if activated then
+            return true, "firesignal"
+        end
+        activated = pcall(fireSignal, button.MouseButton1Click)
+        if activated then
+            return true, "firesignal"
+        end
     end
 
-    local x, fruitName = self:ChooseDropX(strategy)
-    local leftX, rightX = self:GetBounds(nil)
+    local getConnections = self.Context.Environment.getconnections
+        or self.Context.Environment.get_connections
+    if type(getConnections) == "function" then
+        local ok, connections = pcall(getConnections, button.Activated)
+        if ok and type(connections) == "table" then
+            for _, connection in connections do
+                local callback = nil
+                pcall(function()
+                    callback = connection.Function or connection.Fire
+                end)
+                if type(callback) == "function" then
+                    local called = pcall(callback)
+                    if called then
+                        return true, "connection"
+                    end
+                end
+            end
+        end
+    end
+
+    local activated = pcall(function()
+        local anyButton: any = button
+        anyButton:Activate()
+    end)
+    if activated then
+        return true, "activate"
+    end
+    return false, "The executor could not activate the game's DropButton."
+end
+
+function Runtime:TriggerDrop(strategy: string, jitterPercent: number?, movePointer: boolean?): any
+    local dropper = self:GetDropper(nil)
+    local button = self:FindDropButton()
+    if not dropper then
+        return Result(false, "NO_DROPPER", "The active dropper was not found.", nil)
+    end
+    if not button then
+        return Result(false, "NO_DROP_BUTTON", "The live HUD DropButton was not found.", nil)
+    end
+
+    local coordinate, fruitName = self:ChooseDropCoordinate(strategy)
+    local geometry = self:GetGeometry()
     local jitter = math.max(0, jitterPercent or 0)
     if jitter > 0 then
-        x += (math.random() * 2 - 1) * (rightX - leftX) * (jitter / 100)
+        coordinate += (math.random() * 2 - 1) * geometry.Width * jitter / 100
     end
-    x = self:ClampX(x, 0.45)
+    coordinate = self:ClampCoordinate(coordinate, 0.5)
+    local targetPosition = self:PositionAt(dropper.Position, coordinate, dropper.Position.Y)
 
-    local position = Vector3.new(x, dropper.Position.Y, dropper.Position.Z)
     pcall(function()
-        dropper.CFrame = CFrame.new(position) * dropper.CFrame.Rotation
+        dropper.CFrame = CFrame.new(targetPosition) * dropper.CFrame.Rotation
         dropper.AssemblyLinearVelocity = Vector3.zero
         dropper.AssemblyAngularVelocity = Vector3.zero
     end)
 
-    local result = if method == "Game Input"
-        then self:DropUsingInput(position)
-        else self.Context.Remotes:DropFruit(position)
-    if not result.Success and method == "Game Input" then
-        result = self.Context.Remotes:DropFruit(position)
-        if result.Success then
-            result.Message = "Input was unavailable; used the adaptive drop remote instead."
-        end
+    local restorePointer = if movePointer == false
+        then nil
+        else self:MovePointerForDrop(targetPosition)
+    task.wait()
+    local activated, method = self:ActivateDropButton(button)
+    task.wait()
+    if restorePointer then
+        restorePointer()
     end
-    result.Value = result.Value or fruitName
-    return result
+    if not activated then
+        return Result(false, "DROP_CONTROLLER_FAILED", method, nil)
+    end
+    return Result(
+        true,
+        "OK",
+        string.format("Activated the live DropButton through %s.", method),
+        fruitName
+    )
 end
 
 function Runtime:IsPileMoving(maximumSpeed: number): boolean
@@ -410,43 +518,200 @@ function Runtime:IsPileMoving(maximumSpeed: number): boolean
     return false
 end
 
-function Runtime:CanMove(part: BasePart): boolean
+function Runtime:ClaimPhysicsAuthority(): boolean
+    local claimed = false
+    local setSimulationRadius = self.Context.Environment.setsimulationradius
+        or self.Context.Environment.set_simulation_radius
+    if type(setSimulationRadius) == "function" then
+        claimed = pcall(setSimulationRadius, math.huge, math.huge) or claimed
+    end
+
+    local setHiddenProperty = self.Context.Environment.sethiddenproperty
+        or self.Context.Environment.set_hidden_property
+    if type(setHiddenProperty) == "function" then
+        claimed = pcall(
+            setHiddenProperty,
+            self.Context.LocalPlayer,
+            "SimulationRadius",
+            math.huge
+        ) or claimed
+        pcall(
+            setHiddenProperty,
+            self.Context.LocalPlayer,
+            "MaximumSimulationRadius",
+            math.huge
+        )
+    end
+    return claimed
+end
+
+function Runtime:IsNetworkOwner(part: BasePart): boolean?
     local isNetworkOwner = self.Context.Environment.isnetworkowner
+        or self.Context.Environment.is_network_owner
     if type(isNetworkOwner) ~= "function" then
-        return true
+        return nil
     end
     local ok, ownsPart = pcall(isNetworkOwner, part)
-    return not ok or ownsPart == true
+    return if ok then ownsPart == true else nil
 end
 
-function Runtime:AlignPair(first: any, second: any)
-    if not self:CanMove(first.Part) or not self:CanMove(second.Part) then
-        return
+function Runtime:SetTopPassThrough(enabled: boolean): boolean
+    local top = self:GetTopPart()
+    if top and not self.OriginalTop[top] then
+        self.OriginalTop[top] = {
+            CanCollide = top.CanCollide,
+            CanTouch = top.CanTouch,
+            CanQuery = top.CanQuery,
+        }
     end
 
-    local leftX, rightX, baseY = self:GetBounds(nil)
-    local midpoint = (first.Part.Position + second.Part.Position) * 0.5
-    local radius = math.min(first.Part.Size.X, second.Part.Size.X) * 0.22
-    local centerX = math.clamp(midpoint.X, leftX + radius + 0.1, rightX - radius - 0.1)
-    local centerY = math.max(
-        baseY + math.max(first.Part.Size.Y, second.Part.Size.Y) * 0.5 + 0.1,
-        math.min(first.Part.Position.Y, second.Part.Position.Y)
-    )
-    local centerZ = midpoint.Z
-
-    pcall(function()
-        first.Part.CFrame = CFrame.new(centerX - radius, centerY, centerZ)
-            * first.Part.CFrame.Rotation
-        second.Part.CFrame = CFrame.new(centerX + radius, centerY, centerZ)
-            * second.Part.CFrame.Rotation
-        first.Part.AssemblyLinearVelocity = Vector3.zero
-        second.Part.AssemblyLinearVelocity = Vector3.zero
-        first.Part.AssemblyAngularVelocity = Vector3.zero
-        second.Part.AssemblyAngularVelocity = Vector3.zero
-    end)
+    if enabled and top then
+        pcall(function()
+            top.CanCollide = false
+            top.CanTouch = false
+            top.CanQuery = false
+        end)
+    elseif not enabled then
+        for part, original in self.OriginalTop do
+            if part.Parent then
+                pcall(function()
+                    part.CanCollide = original.CanCollide
+                    part.CanTouch = original.CanTouch
+                    part.CanQuery = original.CanQuery
+                end)
+            end
+        end
+        table.clear(self.OriginalTop)
+    end
+    return top ~= nil
 end
 
-function Runtime:FindMergePairs(): {any}
+function Runtime:ClearPhaseConstraints()
+    for _, record in self.PhaseRecords do
+        record.Constraint:Destroy()
+    end
+    table.clear(self.PhaseRecords)
+end
+
+function Runtime:HasPhaseConstraint(first: BasePart, second: BasePart): boolean
+    for _, record in self.PhaseRecords do
+        if (record.First == first and record.Second == second)
+            or (record.First == second and record.Second == first)
+        then
+            return true
+        end
+    end
+    return false
+end
+
+function Runtime:UpdateTierPhasing(enabled: boolean, maximumConstraints: number?): number
+    if not enabled then
+        self:ClearPhaseConstraints()
+        return 0
+    end
+
+    local fruits = self:GetActiveFruits()
+    local activeLevels: {[BasePart]: number} = {}
+    for _, fruit in fruits do
+        activeLevels[fruit.Part] = fruit.Level
+    end
+
+    for index = #self.PhaseRecords, 1, -1 do
+        local record = self.PhaseRecords[index]
+        local firstLevel = activeLevels[record.First]
+        local secondLevel = activeLevels[record.Second]
+        if not record.First.Parent
+            or not record.Second.Parent
+            or not firstLevel
+            or not secondLevel
+            or firstLevel == secondLevel
+        then
+            record.Constraint:Destroy()
+            table.remove(self.PhaseRecords, index)
+        end
+    end
+
+    local limit = math.max(1, maximumConstraints or 700)
+    for firstIndex = 1, #fruits - 1 do
+        local first = fruits[firstIndex]
+        for secondIndex = firstIndex + 1, #fruits do
+            if #self.PhaseRecords >= limit then
+                return #self.PhaseRecords
+            end
+            local second = fruits[secondIndex]
+            if first.Level == second.Level
+                or self:HasPhaseConstraint(first.Part, second.Part)
+                or (first.Part.Position - second.Part.Position).Magnitude > 30
+            then
+                continue
+            end
+
+            local constraint = Instance.new("NoCollisionConstraint")
+            constraint.Name = "FiveAMTierPhase"
+            constraint.Part0 = first.Part
+            constraint.Part1 = second.Part
+            constraint.Parent = self.ConstraintFolder
+            table.insert(self.PhaseRecords, {
+                First = first.Part,
+                Second = second.Part,
+                Constraint = constraint,
+            })
+        end
+    end
+    return #self.PhaseRecords
+end
+
+function Runtime:SetLowBounce(enabled: boolean)
+    local activeParts: {[BasePart]: boolean} = {}
+    if enabled then
+        for _, fruit in self:GetActiveFruits() do
+            local part = fruit.Part
+            activeParts[part] = true
+            if not self.OriginalPhysics[part] then
+                self.OriginalPhysics[part] = {
+                    CustomPhysicalProperties = part.CustomPhysicalProperties,
+                }
+            end
+            pcall(function()
+                part.CustomPhysicalProperties = PhysicalProperties.new(3, 0.85, 0, 100, 100)
+                part.AssemblyAngularVelocity = Vector3.zero
+            end)
+        end
+    end
+
+    if not enabled then
+        for part, original in self.OriginalPhysics do
+            if part.Parent then
+                pcall(function()
+                    part.CustomPhysicalProperties = original.CustomPhysicalProperties
+                end)
+            end
+        end
+        table.clear(self.OriginalPhysics)
+    else
+        for part in self.OriginalPhysics do
+            if not part.Parent or not activeParts[part] then
+                self.OriginalPhysics[part] = nil
+            end
+        end
+    end
+end
+
+function Runtime:ApplyDownforce(force: number)
+    local downwardSpeed = math.max(0, force)
+    for _, fruit in self:GetActiveFruits() do
+        pcall(function()
+            local velocity = fruit.Part.AssemblyLinearVelocity
+            fruit.Part.AssemblyLinearVelocity = Vector3.new(
+                velocity.X,
+                math.min(velocity.Y, -downwardSpeed),
+                velocity.Z
+            )
+        end)
+    end
+end
+
+function Runtime:Magnetize(dt: number, strength: number, snap: boolean)
     local grouped: {[number]: {any}} = {}
     for _, fruit in self:GetActiveFruits() do
         if fruit.Level < #FRUIT_NAMES then
@@ -455,106 +720,88 @@ function Runtime:FindMergePairs(): {any}
         end
     end
 
-    local pairs = {}
-    for level = #FRUIT_NAMES - 1, 1, -1 do
-        local group = grouped[level]
-        if group then
-            table.sort(group, function(left, right)
-                return left.Part.Position.Y < right.Part.Position.Y
+    for _, group in grouped do
+        local used: {[BasePart]: boolean} = {}
+        for _, first in group do
+            if used[first.Part] then
+                continue
+            end
+            local closest = nil
+            local closestDistance = math.huge
+            for _, candidate in group do
+                if candidate.Part == first.Part or used[candidate.Part] then
+                    continue
+                end
+                local delta = Vector3.new(
+                    candidate.Part.Position.X - first.Part.Position.X,
+                    0,
+                    candidate.Part.Position.Z - first.Part.Position.Z
+                )
+                if delta.Magnitude < closestDistance then
+                    closest = candidate
+                    closestDistance = delta.Magnitude
+                end
+            end
+            if not closest then
+                continue
+            end
+
+            used[first.Part] = true
+            used[closest.Part] = true
+            local delta = Vector3.new(
+                closest.Part.Position.X - first.Part.Position.X,
+                0,
+                closest.Part.Position.Z - first.Part.Position.Z
+            )
+            if delta.Magnitude < 0.001 then
+                continue
+            end
+
+            local direction = delta.Unit
+            local speed = math.min(math.max(0, strength), delta.Magnitude * strength)
+            pcall(function()
+                first.Part.AssemblyLinearVelocity = first.Part.AssemblyLinearVelocity
+                    + direction * speed
+                closest.Part.AssemblyLinearVelocity = closest.Part.AssemblyLinearVelocity
+                    - direction * speed
             end)
-            for index = 1, #group - 1, 2 do
-                table.insert(pairs, {
-                    First = group[index],
-                    Second = group[index + 1],
-                    Level = level,
-                })
+
+            if snap then
+                local firstRadius = math.max(first.Part.Size.X, first.Part.Size.Z) * 0.45
+                local secondRadius = math.max(closest.Part.Size.X, closest.Part.Size.Z) * 0.45
+                local contactDistance = firstRadius + secondRadius
+                if delta.Magnitude > contactDistance then
+                    local step = math.min(
+                        (delta.Magnitude - contactDistance) * 0.5,
+                        math.max(0, strength) * dt * 0.12
+                    )
+                    pcall(function()
+                        first.Part.CFrame = first.Part.CFrame + direction * step
+                        closest.Part.CFrame = closest.Part.CFrame - direction * step
+                    end)
+                end
             end
         end
-    end
-    return pairs
-end
-
-function Runtime:MergeSweep(maximumPairs: number, aggressive: boolean): (number, any?)
-    local merged = 0
-    local lastResult = nil
-    local now = os.clock()
-
-    for _, pair in self:FindMergePairs() do
-        if merged >= maximumPairs then
-            break
-        end
-        local firstPart = pair.First.Part
-        local secondPart = pair.Second.Part
-        local firstCooldown = self.MergeCooldowns[firstPart] or 0
-        local secondCooldown = self.MergeCooldowns[secondPart] or 0
-        if now - firstCooldown < 0.35 or now - secondCooldown < 0.35 then
-            continue
-        end
-
-        if aggressive then
-            self:AlignPair(pair.First, pair.Second)
-        elseif (firstPart.Position - secondPart.Position).Magnitude
-            > math.max(firstPart.Size.X, secondPart.Size.X) * 1.25
-        then
-            continue
-        end
-
-        lastResult = self.Context.Remotes:MergeFruits(firstPart, secondPart)
-        if lastResult.Success then
-            self.MergeCooldowns[firstPart] = now
-            self.MergeCooldowns[secondPart] = now
-            merged += 1
-        end
-    end
-    return merged, lastResult
-end
-
-function Runtime:Stabilize(strength: number, downwardForce: number)
-    local leftX, rightX = self:GetBounds(nil)
-    local pullAlpha = math.clamp(strength / 100, 0, 1)
-    for _, fruit in self:GetActiveFruits() do
-        if not self:CanMove(fruit.Part) then
-            continue
-        end
-        local laneX = self:TierLaneX(fruit.Level)
-        local currentVelocity = fruit.Part.AssemblyLinearVelocity
-        local targetXVelocity = math.clamp((laneX - fruit.Part.Position.X) * pullAlpha * 8, -20, 20)
-        if fruit.Part.Position.X < leftX or fruit.Part.Position.X > rightX then
-            targetXVelocity = (self:ClampX(fruit.Part.Position.X) - fruit.Part.Position.X) * 12
-        end
-        pcall(function()
-            fruit.Part.AssemblyAngularVelocity = Vector3.zero
-            fruit.Part.AssemblyLinearVelocity = Vector3.new(
-                targetXVelocity,
-                math.min(currentVelocity.Y, -math.max(0, downwardForce)),
-                currentVelocity.Z * (1 - pullAlpha)
-            )
-        end)
     end
 end
 
 function Runtime:RecoverOverflow(margin: number): number
-    local leftX, rightX, baseY, topY = self:GetBounds(nil)
+    local geometry = self:GetGeometry()
+    local ceiling = geometry.TopY - math.max(0, margin)
     local recovered = 0
-    local ceiling = topY - math.max(0, margin)
-
     for _, fruit in self:GetActiveFruits() do
-        if fruit.Part.Position.Y + fruit.Part.Size.Y * 0.5 < ceiling
-            or not self:CanMove(fruit.Part)
-        then
+        if fruit.Part.Position.Y + fruit.Part.Size.Y * 0.35 < ceiling then
             continue
         end
 
-        local laneX = math.clamp(
-            self:TierLaneX(fruit.Level),
-            leftX + fruit.Part.Size.X * 0.5,
-            rightX - fruit.Part.Size.X * 0.5
-        )
-        local targetY = baseY + fruit.Part.Size.Y * 0.5 + 0.15 + (recovered % 3) * 0.2
+        local coordinate = self:TierLane(fruit.Level)
+        local offsetDirection = if recovered % 2 == 0 then -1 else 1
+        coordinate = self:ClampCoordinate(coordinate + offsetDirection * 0.15, 0.5)
+        local safeY = geometry.BaseY + fruit.Part.Size.Y * 0.5 + 0.2
+        local target = self:PositionAt(fruit.Part.Position, coordinate, safeY)
         pcall(function()
-            fruit.Part.CFrame = CFrame.new(laneX, targetY, fruit.Part.Position.Z)
-                * fruit.Part.CFrame.Rotation
-            fruit.Part.AssemblyLinearVelocity = Vector3.new(0, -5, 0)
+            fruit.Part.CFrame = CFrame.new(target) * fruit.Part.CFrame.Rotation
+            fruit.Part.AssemblyLinearVelocity = Vector3.new(0, -8, 0)
             fruit.Part.AssemblyAngularVelocity = Vector3.zero
         end)
         recovered += 1
@@ -562,29 +809,88 @@ function Runtime:RecoverOverflow(margin: number): number
     return recovered
 end
 
+function Runtime:CompactAll(): number
+    local geometry = self:GetGeometry()
+    local grouped: {[number]: {any}} = {}
+    for _, fruit in self:GetActiveFruits() do
+        grouped[fruit.Level] = grouped[fruit.Level] or {}
+        table.insert(grouped[fruit.Level], fruit)
+    end
+
+    local moved = 0
+    for level, group in grouped do
+        local lane = self:TierLane(level)
+        for index, fruit in group do
+            local side = if index % 2 == 0 then 1 else -1
+            local pairRow = math.floor((index - 1) / 2)
+            local radius = math.max(fruit.Part.Size.X, fruit.Part.Size.Z) * 0.16
+            local coordinate = self:ClampCoordinate(lane + side * radius, 0.5)
+            local targetY = geometry.BaseY
+                + fruit.Part.Size.Y * 0.5
+                + pairRow * 0.08
+            local target = self:PositionAt(fruit.Part.Position, coordinate, targetY)
+            pcall(function()
+                fruit.Part.CFrame = CFrame.new(target) * fruit.Part.CFrame.Rotation
+                fruit.Part.AssemblyLinearVelocity = Vector3.zero
+                fruit.Part.AssemblyAngularVelocity = Vector3.zero
+            end)
+            moved += 1
+        end
+    end
+    return moved
+end
+
+function Runtime:GetBoardFillPercent(): number
+    local geometry = self:GetGeometry()
+    local highest = geometry.BaseY
+    for _, fruit in self:GetActiveFruits() do
+        highest = math.max(highest, fruit.Part.Position.Y + fruit.Part.Size.Y * 0.5)
+    end
+    return math.max(0, (highest - geometry.BaseY) / (geometry.TopY - geometry.BaseY) * 100)
+end
+
 function Runtime:GetRunSummary(): string
     local fruits = self:GetActiveFruits()
     local currentFruit = self:GetCurrentFruitName()
     local highestLevel = 0
-    local estimatedBoardPoints = 0
+    local boardPoints = 0
+    local owned = 0
+    local ownershipKnown = 0
     for _, fruit in fruits do
         highestLevel = math.max(highestLevel, fruit.Level)
-        estimatedBoardPoints += fruit.Points
+        boardPoints += fruit.Points
+        local ownsPart = self:IsNetworkOwner(fruit.Part)
+        if ownsPart ~= nil then
+            ownershipKnown += 1
+            if ownsPart then
+                owned += 1
+            end
+        end
     end
 
     local highestName = if highestLevel > 0 then FRUIT_NAMES[highestLevel] else "None"
+    local ownership = if ownershipKnown > 0
+        then string.format("%d/%d owned", owned, ownershipKnown)
+        else "ownership API unavailable"
     return string.format(
-        "Next: %s | Active: %d | Largest: %s | Board value: %d",
+        "Next: %s | Active: %d | Largest: %s | Fill: %.0f%% | %s | Board value: %d",
         currentFruit or "Unknown",
         #fruits,
         highestName,
-        estimatedBoardPoints
+        self:GetBoardFillPercent(),
+        ownership,
+        boardPoints
     )
 end
 
 function Runtime:Destroy()
     self.Destroyed = true
-    table.clear(self.MergeCooldowns)
+    self:ClearPhaseConstraints()
+    self:SetTopPassThrough(false)
+    self:SetLowBounce(false)
+    if self.ConstraintFolder then
+        self.ConstraintFolder:Destroy()
+    end
 end
 
 return Runtime

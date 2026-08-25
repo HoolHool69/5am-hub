@@ -1,8 +1,9 @@
 --!strict
 
--- All Watermelon Go remote discovery and invocation is intentionally isolated
--- in this file. The analyzed client exposes server-authoritative drop and merge
--- endpoints; feature modules never access those instances directly.
+-- Watermelon Go's analyzed gameplay remotes are server-authoritative, and the
+-- dump does not include their caller argument schemas. The revised module uses
+-- the game's real HUD controller for drops and real local fruit contacts for
+-- merges. This wrapper only owns the optional game-end signal interception.
 
 local RemoteWrapper = {}
 RemoteWrapper.__index = RemoteWrapper
@@ -14,209 +15,192 @@ export type Result = {
     Value: any?,
 }
 
-local OBSERVED_REMOTES: {[string]: {string}} = {
-    RequestFruitDrop = {
-        "ReplicatedStorage",
-        "Remotes",
-        "GamemodeManager",
-        "RequestFruitDrop",
-    },
-    RequestFruitDropOLD = {
-        "ReplicatedStorage",
-        "Remotes",
-        "GamemodeManager",
-        "RequestFruitDropOLD",
-    },
-    RequestFruitMerge = {
-        "ReplicatedStorage",
-        "Remotes",
-        "GamemodeManager",
-        "RequestFruitMerge",
-    },
-    RequestGamemode = {
-        "ReplicatedStorage",
-        "Remotes",
-        "GamemodeManager",
-        "RequestGamemode",
-    },
-    RollbackEvent = {
-        "ReplicatedStorage",
-        "Remotes",
-        "GamemodeManager",
-        "RollbackEvent",
-    },
-    SetGamePaused = {
-        "ReplicatedStorage",
-        "Remotes",
-        "GamemodeManager",
-        "SetGamePaused",
-    },
-    ReplicateCloudPosition = {
-        "ReplicatedStorage",
-        "Remotes",
-        "ReplicationManager",
-        "ReplicateCloudPosition",
-    },
-    RequestFruitTypeDelete = {
-        "ReplicatedStorage",
-        "Utils",
-        "NetworkUtil",
-        "RemoteFunctions",
-        "RequestFruitTypeDelete",
-    },
+local GAME_ENDED_PATH = {
+    "ReplicatedStorage",
+    "Remotes",
+    "GamemodeManager",
+    "GameEnded",
 }
+local HOOK_KEY = "__FiveAMWatermelonGameEndHook"
 
-local function Failure(code: string, message: string): Result
+local function Result(success: boolean, code: string, message: string, value: any?): Result
     return {
-        Success = false,
+        Success = success,
         Code = code,
         Message = message,
+        Value = value,
     }
 end
 
-function RemoteWrapper.new(): any
-    return setmetatable({
-        _paths = table.clone(OBSERVED_REMOTES),
-        _cache = {},
-        _dropMode = nil,
-    }, RemoteWrapper)
-end
-
-function RemoteWrapper:Resolve(name: string): (Instance?, Result?)
-    local cached = self._cache[name]
-    if cached and cached.Parent then
-        return cached, nil
-    end
-
-    local path = self._paths[name]
-    if not path then
-        return nil, Failure("NOT_REGISTERED", string.format("Remote %q is not registered", name))
-    end
-
+local function ResolvePath(path: {string}): Instance?
     local serviceOk, currentOrError = pcall(game.GetService, game, path[1])
     if not serviceOk then
-        return nil, Failure("SERVICE_MISSING", tostring(currentOrError))
+        return nil
     end
 
     local current: Instance = currentOrError
     for index = 2, #path do
         local child = current:FindFirstChild(path[index])
         if not child then
-            return nil, Failure(
-                "REMOTE_MISSING",
-                string.format("Could not resolve %q at segment %q", name, path[index])
-            )
+            return nil
         end
         current = child
     end
-
-    self._cache[name] = current
-    return current, nil
+    return current
 end
 
-function RemoteWrapper:Fire(name: string, ...: any): Result
-    local remote, resolveError = self:Resolve(name)
-    if not remote then
-        return resolveError :: Result
-    end
-    if not remote:IsA("RemoteEvent") and not remote:IsA("UnreliableRemoteEvent") then
-        return Failure("TYPE_MISMATCH", string.format("%q is not an event remote", name))
-    end
-
-    local eventRemote: any = remote
-    local ok, errorMessage = pcall(function(...: any)
-        eventRemote:FireServer(...)
-    end, ...)
-    if not ok then
-        return Failure("CALL_FAILED", tostring(errorMessage))
-    end
-
-    return {
-        Success = true,
-        Code = "OK",
-        Message = string.format("Fired %q", name),
-    }
-end
-
-function RemoteWrapper:Invoke(name: string, ...: any): Result
-    local remote, resolveError = self:Resolve(name)
-    if not remote then
-        return resolveError :: Result
-    end
-    if not remote:IsA("RemoteFunction") then
-        return Failure("TYPE_MISMATCH", string.format("%q is not a RemoteFunction", name))
-    end
-
-    local ok, valueOrError = pcall(function(...: any)
-        return (remote :: RemoteFunction):InvokeServer(...)
-    end, ...)
-    if not ok then
-        return Failure("CALL_FAILED", tostring(valueOrError))
-    end
-
-    return {
-        Success = true,
-        Code = "OK",
-        Message = string.format("Invoked %q", name),
-        Value = valueOrError,
-    }
-end
-
--- The dump identifies RequestFruitDrop but does not contain its LocalScript
--- caller. The optional fast path probes common argument generations and then
--- remembers the first shape accepted by the live server. The default autoplayer
--- uses the original game input controller, avoiding this compatibility path.
-function RemoteWrapper:DropFruit(worldPosition: Vector3): Result
-    self:Fire("ReplicateCloudPosition", worldPosition)
-
-    local modes = if self._dropMode
-        then { self._dropMode }
-        else { "Vector3", "Number", "NoArguments" }
-    local lastResult: Result? = nil
-
-    for _, mode in modes do
-        local result = if mode == "Vector3"
-            then self:Invoke("RequestFruitDrop", worldPosition)
-            elseif mode == "Number" then self:Invoke("RequestFruitDrop", worldPosition.X)
-            else self:Invoke("RequestFruitDrop")
-
-        if result.Success and result.Value ~= false then
-            self._dropMode = mode
-            return result
+local function SharedEnvironment(environment: any): any
+    local getGlobalEnvironment = environment.getgenv
+    if type(getGlobalEnvironment) == "function" then
+        local ok, globalEnvironment = pcall(getGlobalEnvironment)
+        if ok and type(globalEnvironment) == "table" then
+            return globalEnvironment
         end
-        lastResult = result
+    end
+    return environment
+end
+
+function RemoteWrapper.new(): any
+    return setmetatable({
+        _cache = {},
+        _disabledIncoming = {},
+        _hookState = nil,
+    }, RemoteWrapper)
+end
+
+function RemoteWrapper:ResolveGameEnded(): Instance?
+    local cached = self._cache.GameEnded
+    if cached and cached.Parent then
+        return cached
     end
 
-    local legacyResult = self:Fire("RequestFruitDropOLD", worldPosition)
-    if legacyResult.Success then
-        return legacyResult
+    local remote = ResolvePath(GAME_ENDED_PATH)
+    if remote then
+        self._cache.GameEnded = remote
     end
-    return lastResult or legacyResult
+    return remote
 end
 
-function RemoteWrapper:MergeFruits(firstFruit: BasePart, secondFruit: BasePart): Result
-    return self:Fire("RequestFruitMerge", firstFruit, secondFruit)
+function RemoteWrapper:RestoreIncomingConnections()
+    for _, connection in self._disabledIncoming do
+        local enable = nil
+        pcall(function()
+            enable = connection.Enable
+        end)
+        if type(enable) == "function" then
+            pcall(enable, connection)
+        end
+    end
+    table.clear(self._disabledIncoming)
 end
 
-function RemoteWrapper:RequestSinglePlayer(): Result
-    return self:Fire("RequestGamemode", "SinglePlayer")
+function RemoteWrapper:DisableIncomingConnections(remote: Instance, environment: any)
+    self:RestoreIncomingConnections()
+    local getConnections = environment.getconnections
+        or environment.get_connections
+    if type(getConnections) ~= "function" or not remote:IsA("RemoteEvent") then
+        return
+    end
+
+    local ok, connections = pcall(getConnections, remote.OnClientEvent)
+    if not ok or type(connections) ~= "table" then
+        return
+    end
+    for _, connection in connections do
+        local disable = nil
+        pcall(function()
+            disable = connection.Disable
+        end)
+        if type(disable) == "function" then
+            local disabled = pcall(disable, connection)
+            if disabled then
+                table.insert(self._disabledIncoming, connection)
+            end
+        end
+    end
 end
 
-function RemoteWrapper:SetPaused(paused: boolean): Result
-    return self:Fire("SetGamePaused", paused)
+function RemoteWrapper:InstallNamecallHook(remote: Instance, environment: any): any?
+    local sharedEnvironment = SharedEnvironment(environment)
+    local existing = sharedEnvironment[HOOK_KEY]
+    if type(existing) == "table" then
+        existing.Target = remote
+        self._hookState = existing
+        return existing
+    end
+
+    local hookMetamethod = environment.hookmetamethod
+    local getNamecallMethod = environment.getnamecallmethod
+    if type(hookMetamethod) ~= "function" or type(getNamecallMethod) ~= "function" then
+        return nil
+    end
+
+    local state: any = {
+        Enabled = false,
+        Target = remote,
+        Original = nil,
+    }
+    local originalNamecall: any = nil
+    local wrapper = function(target: any, ...: any)
+        local method = getNamecallMethod()
+        if state.Enabled and target == state.Target and method == "FireServer" then
+            return nil
+        end
+        return originalNamecall(target, ...)
+    end
+    local newCClosure = environment.newcclosure
+    if type(newCClosure) == "function" then
+        wrapper = newCClosure(wrapper)
+    end
+
+    local hookOk, originalOrError = pcall(hookMetamethod, game, "__namecall", wrapper)
+    if not hookOk or type(originalOrError) ~= "function" then
+        return nil
+    end
+    originalNamecall = originalOrError
+    state.Original = originalNamecall
+    sharedEnvironment[HOOK_KEY] = state
+    self._hookState = state
+    return state
 end
 
-function RemoteWrapper:Rollback(): Result
-    return self:Fire("RollbackEvent")
-end
+function RemoteWrapper:SetGameEndBlocked(enabled: boolean, environment: any): Result
+    local remote = self:ResolveGameEnded()
+    if not remote then
+        return Result(false, "REMOTE_MISSING", "GamemodeManager.GameEnded was not found.", nil)
+    end
 
-function RemoteWrapper:DeleteFruitType(fruitName: string): Result
-    return self:Invoke("RequestFruitTypeDelete", fruitName)
+    if not enabled then
+        if self._hookState then
+            self._hookState.Enabled = false
+        end
+        self:RestoreIncomingConnections()
+        return Result(true, "OK", "Game-end interception disabled.", nil)
+    end
+
+    local state = self:InstallNamecallHook(remote, environment)
+    self:DisableIncomingConnections(remote, environment)
+    if not state and #self._disabledIncoming == 0 then
+        return Result(
+            false,
+            "UNSUPPORTED",
+            "This executor exposes neither namecall hooks nor connection controls.",
+            nil
+        )
+    end
+    if state then
+        state.Enabled = true
+        state.Target = remote
+    end
+    return Result(true, "OK", "Client game-end signals are blocked.", nil)
 end
 
 function RemoteWrapper:ClearCache()
+    if self._hookState then
+        self._hookState.Enabled = false
+    end
+    self:RestoreIncomingConnections()
     table.clear(self._cache)
-    self._dropMode = nil
 end
 
 return RemoteWrapper
