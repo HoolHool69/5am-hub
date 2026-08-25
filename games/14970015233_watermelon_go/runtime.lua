@@ -112,7 +112,6 @@ function Runtime.new(context: any): any
         OriginalPhysics = setmetatable({}, { __mode = "k" }),
         OriginalTop = setmetatable({}, { __mode = "k" }),
         CooldownTables = setmetatable({}, { __mode = "k" }),
-        LastCooldownDiscovery = 0,
     }, Runtime)
 end
 
@@ -513,7 +512,7 @@ function Runtime:PatchCooldownFunction(callback: any): number
     end
 
     if type(getUpvalue) == "function" then
-        for index = 1, 80 do
+        for index = 1, 32 do
             local ok, name, value = pcall(getUpvalue, callback, index)
             if not ok or name == nil then
                 break
@@ -557,31 +556,6 @@ function Runtime:PatchCooldownFunction(callback: any): number
     return patched
 end
 
-function Runtime:DiscoverCooldownTables(): number
-    local getGc = self.Context.Environment.getgc
-        or self.Context.Environment.get_gc_objects
-    if type(getGc) ~= "function" then
-        return 0
-    end
-
-    local ok, objects = pcall(getGc, true)
-    if not ok or type(objects) ~= "table" then
-        return 0
-    end
-    local discovered = 0
-    for _, object in objects do
-        if type(object) == "table" then
-            local patched = self:PatchCooldownTable(object, false)
-            if patched > 0 then
-                self.CooldownTables[object] = true
-                discovered += 1
-            end
-        end
-    end
-    self.LastCooldownDiscovery = os.clock()
-    return discovered
-end
-
 function Runtime:ResetDropCooldown(): number
     local button = self:FindDropButton()
     local patched = 0
@@ -610,9 +584,6 @@ function Runtime:ResetDropCooldown(): number
         end
     end
 
-    if os.clock() - self.LastCooldownDiscovery >= 3 then
-        patched += self:DiscoverCooldownTables()
-    end
     for controller in self.CooldownTables do
         patched += self:PatchCooldownTable(controller, true)
     end

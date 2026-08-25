@@ -20,7 +20,6 @@ function Autoplayer.Init(context: any)
     local lastDrop = 0
     local lastCompact = 0
     local lastErrorNotice = 0
-    local lastCooldownReset = 0
 
     local function Flag(name: string, fallback: any): any
         local value = context.Flags:Get(name)
@@ -84,7 +83,7 @@ function Autoplayer.Init(context: any)
     })
     dropSection:AddToggle("WatermelonGoRemoveDropCooldown", {
         Title = "Remove Drop Cooldown",
-        Description = "Continuously resets the live DropButton callback and controller debounce state.",
+        Description = "Resets only the live DropButton callback immediately before and after each hub-driven drop.",
         Default = false,
         Flag = "WatermelonGoRemoveDropCooldown",
     })
@@ -148,12 +147,6 @@ function Autoplayer.Init(context: any)
     task.spawn(function()
         while not destroyed do
             local now = os.clock()
-            if Flag("WatermelonGoRemoveDropCooldown", false) == true
-                and now - lastCooldownReset >= 0.04
-            then
-                lastCooldownReset = now
-                context.Runtime:ResetDropCooldown()
-            end
             if Flag("WatermelonGoAutoPlay", false) == true then
                 local maximumFill = tonumber(Flag("WatermelonGoMaximumFill", 72)) or 72
                 local fillPercent = context.Runtime:GetBoardFillPercent()
