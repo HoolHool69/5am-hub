@@ -14,6 +14,17 @@
         "PlaceIds": [113191263362278]
       }
     },
+    "14970015233": {
+      "PlaceId": 14970015233,
+      "Module": "14970015233_watermelon_go",
+      "Fallback": false,
+      "Meta": {
+        "Name": "Watermelon Go",
+        "DisplayName": "Watermelon Go",
+        "Version": "1.0.0",
+        "PlaceIds": [14970015233]
+      }
+    },
     "89035794510548": {
       "PlaceId": 89035794510548,
       "Module": "89035794510548_endless_games",

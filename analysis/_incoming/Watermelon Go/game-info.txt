@@ -1,0 +1,12 @@
+Game: Ugc
+PlaceId: 14970015233
+JobId: a8791c7f-f074-463d-8d9b-db140cee11a9
+
+Summary:
+The Game is basically just the Suika Game.
+
+Detected client-visible information:
+- Workspace instances: 3012
+- Replicated network remotes: 118
+- ProximityPrompts: 0
+- Trash/search-related ProximityPrompts: 0
