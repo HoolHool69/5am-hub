@@ -123,8 +123,9 @@ function RemoteWrapper:Fire(name: string, ...: any): Result
         return Failure("TYPE_MISMATCH", string.format("%q is not an event remote", name))
     end
 
+    local eventRemote: any = remote
     local ok, errorMessage = pcall(function(...: any)
-        (remote :: any):FireServer(...)
+        eventRemote:FireServer(...)
     end, ...)
     if not ok then
         return Failure("CALL_FAILED", tostring(errorMessage))

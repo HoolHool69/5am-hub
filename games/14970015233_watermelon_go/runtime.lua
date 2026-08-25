@@ -343,12 +343,13 @@ function Runtime:DropUsingInput(position: Vector3): any
 
     local serviceOk, virtualInput = pcall(game.GetService, game, "VirtualInputManager")
     if serviceOk and virtualInput then
+        local inputManager: any = virtualInput
         local inputOk, inputError = pcall(function()
-            (virtualInput :: any):SendMouseMoveEvent(x, y, game)
+            inputManager:SendMouseMoveEvent(x, y, game)
             task.wait()
-            (virtualInput :: any):SendMouseButtonEvent(x, y, 0, true, game, 0)
+            inputManager:SendMouseButtonEvent(x, y, 0, true, game, 0)
             task.wait()
-            (virtualInput :: any):SendMouseButtonEvent(x, y, 0, false, game, 0)
+            inputManager:SendMouseButtonEvent(x, y, 0, false, game, 0)
         end)
         if inputOk then
             return Result(true, "OK", "Dropped through the game's input controller.", nil)
