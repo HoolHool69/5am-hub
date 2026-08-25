@@ -20,6 +20,7 @@ function Autoplayer.Init(context: any)
     local lastDrop = 0
     local lastCompact = 0
     local lastErrorNotice = 0
+    local lastCooldownReset = 0
 
     local function Flag(name: string, fallback: any): any
         local value = context.Flags:Get(name)
@@ -30,7 +31,13 @@ function Autoplayer.Init(context: any)
         local strategy = tostring(Flag("WatermelonGoDropStrategy", "Smart Match"))
         local jitter = tonumber(Flag("WatermelonGoDropJitter", 0)) or 0
         local movePointer = Flag("WatermelonGoPositionController", true) == true
-        local result = context.Runtime:TriggerDrop(strategy, jitter, movePointer)
+        local removeCooldown = Flag("WatermelonGoRemoveDropCooldown", false) == true
+        local result = context.Runtime:TriggerDrop(
+            strategy,
+            jitter,
+            movePointer,
+            removeCooldown
+        )
         if result.Success then
             if showSuccess then
                 context.Notify(
@@ -53,10 +60,10 @@ function Autoplayer.Init(context: any)
     })
     dropSection:AddSlider("WatermelonGoDropInterval", {
         Title = "Drop Interval",
-        Min = 0.2,
+        Min = 0.02,
         Max = 3,
-        Default = 0.8,
-        Increment = 0.05,
+        Default = 0.1,
+        Increment = 0.01,
         Suffix = "s",
         Flag = "WatermelonGoDropInterval",
     })
@@ -74,6 +81,12 @@ function Autoplayer.Init(context: any)
         Description = "Temporarily moves only the pointer's horizontal coordinate, then restores it after the drop.",
         Default = true,
         Flag = "WatermelonGoPositionController",
+    })
+    dropSection:AddToggle("WatermelonGoRemoveDropCooldown", {
+        Title = "Remove Drop Cooldown",
+        Description = "Continuously resets the live DropButton callback and controller debounce state.",
+        Default = false,
+        Flag = "WatermelonGoRemoveDropCooldown",
     })
     dropSection:AddToggle("WatermelonGoAutoPlay", {
         Title = "Auto Drop",
@@ -134,8 +147,14 @@ function Autoplayer.Init(context: any)
 
     task.spawn(function()
         while not destroyed do
+            local now = os.clock()
+            if Flag("WatermelonGoRemoveDropCooldown", false) == true
+                and now - lastCooldownReset >= 0.04
+            then
+                lastCooldownReset = now
+                context.Runtime:ResetDropCooldown()
+            end
             if Flag("WatermelonGoAutoPlay", false) == true then
-                local now = os.clock()
                 local maximumFill = tonumber(Flag("WatermelonGoMaximumFill", 72)) or 72
                 local fillPercent = context.Runtime:GetBoardFillPercent()
                 if Flag("WatermelonGoAutoCompact", true) == true
@@ -147,8 +166,8 @@ function Autoplayer.Init(context: any)
                 end
 
                 local interval = math.max(
-                    0.15,
-                    tonumber(Flag("WatermelonGoDropInterval", 0.8)) or 0.8
+                    0.01,
+                    tonumber(Flag("WatermelonGoDropInterval", 0.1)) or 0.1
                 )
                 if now - lastDrop >= interval then
                     local waitForSettle = Flag("WatermelonGoWaitForSettle", true) == true

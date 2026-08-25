@@ -14,9 +14,10 @@ function FruitControl.Init(context: any)
 
     local destroyed = false
     local lastAuthority = 0
-    local lastPhaseRefresh = 0
     local lastPropertyRefresh = 0
     local lastTopRefresh = 0
+    local activeFolder: Instance? = nil
+    local fruitAddedConnection: RBXScriptConnection? = nil
 
     local function Flag(name: string, fallback: any): any
         local value = context.Flags:Get(name)
@@ -49,7 +50,9 @@ function FruitControl.Init(context: any)
         Default = false,
         Flag = "WatermelonGoTierPhasing",
         Callback = function(value: boolean)
-            if not value then
+            if value then
+                context.Runtime:UpdateTierPhasing(true)
+            else
                 context.Runtime:UpdateTierPhasing(false)
             end
         end,
@@ -161,6 +164,26 @@ function FruitControl.Init(context: any)
         end,
     })
 
+    local function BindActiveFolder()
+        local currentFolder = context.Runtime:GetActiveFolder()
+        if currentFolder == activeFolder then
+            return
+        end
+        if fruitAddedConnection then
+            fruitAddedConnection:Disconnect()
+            fruitAddedConnection = nil
+        end
+        activeFolder = currentFolder
+        if activeFolder then
+            fruitAddedConnection = activeFolder.ChildAdded:Connect(function(instance)
+                if Flag("WatermelonGoTierPhasing", false) == true then
+                    context.Runtime:PrimePhaseInstance(instance)
+                end
+            end)
+        end
+    end
+
+    BindActiveFolder()
     local physicsConnection = RunService.PreSimulation:Connect(function(dt: number)
         if destroyed then
             return
@@ -179,12 +202,10 @@ function FruitControl.Init(context: any)
                 Flag("WatermelonGoTopPassThrough", false) == true
             )
         end
-        if now - lastPhaseRefresh >= 0.15 then
-            lastPhaseRefresh = now
-            context.Runtime:UpdateTierPhasing(
-                Flag("WatermelonGoTierPhasing", false) == true
-            )
-        end
+        BindActiveFolder()
+        context.Runtime:UpdateTierPhasing(
+            Flag("WatermelonGoTierPhasing", false) == true
+        )
         if now - lastPropertyRefresh >= 0.2 then
             lastPropertyRefresh = now
             context.Runtime:SetLowBounce(
@@ -214,6 +235,10 @@ function FruitControl.Init(context: any)
     return function()
         destroyed = true
         physicsConnection:Disconnect()
+        if fruitAddedConnection then
+            fruitAddedConnection:Disconnect()
+            fruitAddedConnection = nil
+        end
         context.Remotes:SetGameEndBlocked(false, context.Environment)
         context.Runtime:UpdateTierPhasing(false)
         context.Runtime:SetTopPassThrough(false)

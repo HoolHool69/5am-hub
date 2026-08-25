@@ -108,8 +108,11 @@ function Runtime.new(context: any): any
         Destroyed = false,
         ConstraintFolder = constraintFolder,
         PhaseRecords = {},
+        PhaseLookup = setmetatable({}, { __mode = "k" }),
         OriginalPhysics = setmetatable({}, { __mode = "k" }),
         OriginalTop = setmetatable({}, { __mode = "k" }),
+        CooldownTables = setmetatable({}, { __mode = "k" }),
+        LastCooldownDiscovery = 0,
     }, Runtime)
 end
 
@@ -223,7 +226,7 @@ function Runtime:PositionAt(original: Vector3, coordinate: number, y: number?): 
     return shifted
 end
 
-function Runtime:GetActiveFruits(): {any}
+function Runtime:GetActiveFruits(includeLeveling: boolean?): {any}
     local folder = self:GetActiveFolder()
     local fruits = {}
     if not folder then
@@ -233,7 +236,11 @@ function Runtime:GetActiveFruits(): {any}
     for _, child in folder:GetChildren() do
         local part = AsPart(child)
         local fruitName, level = FruitIdentity(child)
-        if part and fruitName and level and not IsLeveling(child, part) then
+        if part
+            and fruitName
+            and level
+            and (includeLeveling == true or not IsLeveling(child, part))
+        then
             table.insert(fruits, {
                 Instance = child,
                 Part = part,
@@ -418,6 +425,200 @@ function Runtime:MovePointerForDrop(worldPosition: Vector3): (() -> ())?
     return nil
 end
 
+function Runtime:PatchCooldownTable(candidate: any, allowGenericGate: boolean?): number
+    if type(candidate) ~= "table" then
+        return 0
+    end
+
+    local tableLooksDropRelated = allowGenericGate == true
+    if not tableLooksDropRelated then
+        for key in candidate do
+            if type(key) == "string"
+                and string.find(string.lower(key), "drop", 1, true) ~= nil
+            then
+                tableLooksDropRelated = true
+                break
+            end
+        end
+    end
+    if not tableLooksDropRelated then
+        return 0
+    end
+
+    local patched = 0
+    for key, value in candidate do
+        if type(key) ~= "string" then
+            continue
+        end
+        local normalized = string.lower(key):gsub("[^a-z]", "")
+        local mentionsDrop = string.find(normalized, "drop", 1, true) ~= nil
+        local mentionsGate = string.find(normalized, "cooldown", 1, true) ~= nil
+            or string.find(normalized, "debounce", 1, true) ~= nil
+            or string.find(normalized, "candrop", 1, true) ~= nil
+            or string.find(normalized, "dropping", 1, true) ~= nil
+            or string.find(normalized, "dropdelay", 1, true) ~= nil
+            or string.find(normalized, "dropwait", 1, true) ~= nil
+            or string.find(normalized, "lastdrop", 1, true) ~= nil
+            or string.find(normalized, "nextdrop", 1, true) ~= nil
+        if not mentionsGate
+            and not (mentionsDrop and string.find(normalized, "ready", 1, true))
+        then
+            continue
+        end
+
+        if type(value) == "boolean" then
+            local allowDrop = string.find(normalized, "candrop", 1, true) ~= nil
+                or string.find(normalized, "ready", 1, true) ~= nil
+                or string.find(normalized, "enabled", 1, true) ~= nil
+            candidate[key] = allowDrop
+            patched += 1
+        elseif type(value) == "number" then
+            candidate[key] = if string.find(normalized, "last", 1, true)
+                then -1000000000
+                else 0
+            patched += 1
+        end
+    end
+    return patched
+end
+
+function Runtime:PatchCooldownFunction(callback: any): number
+    if type(callback) ~= "function" then
+        return 0
+    end
+
+    local environment = self.Context.Environment
+    local debugLibrary = environment.debug or debug
+    local getUpvalue = environment.getupvalue
+        or environment.debug_getupvalue
+        or (if type(debugLibrary) == "table" then debugLibrary.getupvalue else nil)
+    local setUpvalue = environment.setupvalue
+        or environment.debug_setupvalue
+        or (if type(debugLibrary) == "table" then debugLibrary.setupvalue else nil)
+    local patched = 0
+
+    local getUpvalues = environment.getupvalues
+        or environment.debug_getupvalues
+        or (if type(debugLibrary) == "table" then debugLibrary.getupvalues else nil)
+    if type(getUpvalues) == "function" then
+        local valuesOk, values = pcall(getUpvalues, callback)
+        if valuesOk and type(values) == "table" then
+            for _, value in values do
+                if type(value) == "table" then
+                    patched += self:PatchCooldownTable(value, true)
+                    self.CooldownTables[value] = true
+                end
+            end
+        end
+    end
+
+    if type(getUpvalue) == "function" then
+        for index = 1, 80 do
+            local ok, name, value = pcall(getUpvalue, callback, index)
+            if not ok or name == nil then
+                break
+            end
+            if type(value) == "table" then
+                patched += self:PatchCooldownTable(value, true)
+                self.CooldownTables[value] = true
+            end
+
+            if type(name) ~= "string" or type(setUpvalue) ~= "function" then
+                continue
+            end
+            local normalized = string.lower(name):gsub("[^a-z]", "")
+            local relevant = string.find(normalized, "drop", 1, true) ~= nil
+                and (
+                    string.find(normalized, "cooldown", 1, true) ~= nil
+                    or string.find(normalized, "debounce", 1, true) ~= nil
+                    or string.find(normalized, "delay", 1, true) ~= nil
+                    or string.find(normalized, "last", 1, true) ~= nil
+                    or string.find(normalized, "next", 1, true) ~= nil
+                    or string.find(normalized, "ready", 1, true) ~= nil
+                    or string.find(normalized, "can", 1, true) ~= nil
+                    or string.find(normalized, "dropping", 1, true) ~= nil
+                )
+            if relevant and type(value) == "boolean" then
+                local allowDrop = string.find(normalized, "can", 1, true) ~= nil
+                    or string.find(normalized, "ready", 1, true) ~= nil
+                if pcall(setUpvalue, callback, index, allowDrop) then
+                    patched += 1
+                end
+            elseif relevant and type(value) == "number" then
+                local replacement = if string.find(normalized, "last", 1, true)
+                    then -1000000000
+                    else 0
+                if pcall(setUpvalue, callback, index, replacement) then
+                    patched += 1
+                end
+            end
+        end
+    end
+    return patched
+end
+
+function Runtime:DiscoverCooldownTables(): number
+    local getGc = self.Context.Environment.getgc
+        or self.Context.Environment.get_gc_objects
+    if type(getGc) ~= "function" then
+        return 0
+    end
+
+    local ok, objects = pcall(getGc, true)
+    if not ok or type(objects) ~= "table" then
+        return 0
+    end
+    local discovered = 0
+    for _, object in objects do
+        if type(object) == "table" then
+            local patched = self:PatchCooldownTable(object, false)
+            if patched > 0 then
+                self.CooldownTables[object] = true
+                discovered += 1
+            end
+        end
+    end
+    self.LastCooldownDiscovery = os.clock()
+    return discovered
+end
+
+function Runtime:ResetDropCooldown(): number
+    local button = self:FindDropButton()
+    local patched = 0
+    if button then
+        pcall(function()
+            button.Active = true
+            local anyButton: any = button
+            anyButton.Interactable = true
+        end)
+
+        local getConnections = self.Context.Environment.getconnections
+            or self.Context.Environment.get_connections
+        if type(getConnections) == "function" then
+            for _, signal in { button.Activated, button.MouseButton1Click, button.MouseButton1Down } do
+                local ok, connections = pcall(getConnections, signal)
+                if ok and type(connections) == "table" then
+                    for _, connection in connections do
+                        local callback = nil
+                        pcall(function()
+                            callback = connection.Function
+                        end)
+                        patched += self:PatchCooldownFunction(callback)
+                    end
+                end
+            end
+        end
+    end
+
+    if os.clock() - self.LastCooldownDiscovery >= 3 then
+        patched += self:DiscoverCooldownTables()
+    end
+    for controller in self.CooldownTables do
+        patched += self:PatchCooldownTable(controller, true)
+    end
+    return patched
+end
+
 function Runtime:ActivateDropButton(button: GuiButton): (boolean, string)
     local fireSignal = self.Context.Environment.firesignal
         or self.Context.Environment.fire_signal
@@ -462,7 +663,12 @@ function Runtime:ActivateDropButton(button: GuiButton): (boolean, string)
     return false, "The executor could not activate the game's DropButton."
 end
 
-function Runtime:TriggerDrop(strategy: string, jitterPercent: number?, movePointer: boolean?): any
+function Runtime:TriggerDrop(
+    strategy: string,
+    jitterPercent: number?,
+    movePointer: boolean?,
+    removeCooldown: boolean?
+): any
     local dropper = self:GetDropper(nil)
     local button = self:FindDropButton()
     if not dropper then
@@ -470,6 +676,10 @@ function Runtime:TriggerDrop(strategy: string, jitterPercent: number?, movePoint
     end
     if not button then
         return Result(false, "NO_DROP_BUTTON", "The live HUD DropButton was not found.", nil)
+    end
+
+    if removeCooldown == true then
+        self:ResetDropCooldown()
     end
 
     local coordinate, fruitName = self:ChooseDropCoordinate(strategy)
@@ -492,6 +702,9 @@ function Runtime:TriggerDrop(strategy: string, jitterPercent: number?, movePoint
         else self:MovePointerForDrop(targetPosition)
     task.wait()
     local activated, method = self:ActivateDropButton(button)
+    if removeCooldown == true then
+        self:ResetDropCooldown()
+    end
     task.wait()
     if restorePointer then
         restorePointer()
@@ -591,17 +804,34 @@ function Runtime:ClearPhaseConstraints()
         record.Constraint:Destroy()
     end
     table.clear(self.PhaseRecords)
+    table.clear(self.PhaseLookup)
 end
 
 function Runtime:HasPhaseConstraint(first: BasePart, second: BasePart): boolean
-    for _, record in self.PhaseRecords do
-        if (record.First == first and record.Second == second)
-            or (record.First == second and record.Second == first)
-        then
-            return true
-        end
+    local firstLookup = self.PhaseLookup[first]
+    return firstLookup ~= nil and firstLookup[second] ~= nil
+end
+
+function Runtime:AddPhaseConstraint(first: BasePart, second: BasePart): boolean
+    if first == second or self:HasPhaseConstraint(first, second) then
+        return false
     end
-    return false
+    local constraint = Instance.new("NoCollisionConstraint")
+    constraint.Name = "FiveAMTierPhase"
+    constraint.Part0 = first
+    constraint.Part1 = second
+    constraint.Parent = self.ConstraintFolder
+
+    self.PhaseLookup[first] = self.PhaseLookup[first] or setmetatable({}, { __mode = "k" })
+    self.PhaseLookup[second] = self.PhaseLookup[second] or setmetatable({}, { __mode = "k" })
+    self.PhaseLookup[first][second] = constraint
+    self.PhaseLookup[second][first] = constraint
+    table.insert(self.PhaseRecords, {
+        First = first,
+        Second = second,
+        Constraint = constraint,
+    })
+    return true
 end
 
 function Runtime:UpdateTierPhasing(enabled: boolean, maximumConstraints: number?): number
@@ -610,7 +840,7 @@ function Runtime:UpdateTierPhasing(enabled: boolean, maximumConstraints: number?
         return 0
     end
 
-    local fruits = self:GetActiveFruits()
+    local fruits = self:GetActiveFruits(true)
     local activeLevels: {[BasePart]: number} = {}
     for _, fruit in fruits do
         activeLevels[fruit.Part] = fruit.Level
@@ -626,12 +856,20 @@ function Runtime:UpdateTierPhasing(enabled: boolean, maximumConstraints: number?
             or not secondLevel
             or firstLevel == secondLevel
         then
+            local firstLookup = self.PhaseLookup[record.First]
+            local secondLookup = self.PhaseLookup[record.Second]
+            if firstLookup then
+                firstLookup[record.Second] = nil
+            end
+            if secondLookup then
+                secondLookup[record.First] = nil
+            end
             record.Constraint:Destroy()
             table.remove(self.PhaseRecords, index)
         end
     end
 
-    local limit = math.max(1, maximumConstraints or 700)
+    local limit = math.max(1, maximumConstraints or 10000)
     for firstIndex = 1, #fruits - 1 do
         local first = fruits[firstIndex]
         for secondIndex = firstIndex + 1, #fruits do
@@ -641,24 +879,48 @@ function Runtime:UpdateTierPhasing(enabled: boolean, maximumConstraints: number?
             local second = fruits[secondIndex]
             if first.Level == second.Level
                 or self:HasPhaseConstraint(first.Part, second.Part)
-                or (first.Part.Position - second.Part.Position).Magnitude > 30
             then
                 continue
             end
-
-            local constraint = Instance.new("NoCollisionConstraint")
-            constraint.Name = "FiveAMTierPhase"
-            constraint.Part0 = first.Part
-            constraint.Part1 = second.Part
-            constraint.Parent = self.ConstraintFolder
-            table.insert(self.PhaseRecords, {
-                First = first.Part,
-                Second = second.Part,
-                Constraint = constraint,
-            })
+            self:AddPhaseConstraint(first.Part, second.Part)
         end
     end
     return #self.PhaseRecords
+end
+
+function Runtime:PrimePhaseInstance(instance: Instance)
+    local part = AsPart(instance)
+    if not part then
+        task.defer(function()
+            if not self.Destroyed and instance.Parent then
+                self:PrimePhaseInstance(instance)
+            end
+        end)
+        return
+    end
+
+    local originalCanCollide = part.CanCollide
+    pcall(function()
+        part.CanCollide = false
+    end)
+    task.spawn(function()
+        for _ = 1, 6 do
+            if self.Destroyed or not instance.Parent then
+                return
+            end
+            self:UpdateTierPhasing(true)
+            local fruitName = FruitIdentity(instance)
+            if fruitName then
+                break
+            end
+            task.wait()
+        end
+        if part.Parent then
+            pcall(function()
+                part.CanCollide = originalCanCollide
+            end)
+        end
+    end)
 end
 
 function Runtime:SetLowBounce(enabled: boolean)
